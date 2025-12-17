@@ -1,26 +1,44 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg
 
 
-def _get_db_url() -> str:
-    url = os.getenv("DATABASE_URL_READONLY") or os.getenv("DATABASE_URL")
-    if not url:
-        raise RuntimeError("DATABASE_URL(_READONLY) not set")
-    return url
+@dataclass
+class QueryResult:
+    columns: List[str]
+    rows: List[Dict[str, Any]]
 
 
-def execute_select(sql: str, params: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
-    """Execute read-only SQL and return rows as dicts.
-
-    Note: Ensure the provided credentials are read-only on the database.
+class PostgresClient:
     """
-    params = params or {}
-    with psycopg.connect(_get_db_url()) as conn:
-        conn.execute("SET statement_timeout TO '15s'")
-        with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
-            cur.execute(sql, params)
-            return list(cur.fetchall())
+    Safe-ish DB runner:
+    - Uses DATABASE_URL_READONLY
+    - Sets statement_timeout per-connection
+    - Returns rows as list-of-dicts
+    """
+
+    def __init__(self, dsn: Optional[str] = None, statement_timeout_ms: int = 5000):
+        self.dsn = dsn or os.environ["DATABASE_URL_READONLY"]
+        self.statement_timeout_ms = statement_timeout_ms
+
+    def run_select(self, sql: str, params: Optional[Tuple[Any, ...]] = None) -> QueryResult:
+        params = params or tuple()
+        with psycopg.connect(self.dsn, autocommit=True) as conn:
+            # Hard timeout at DB level
+            with conn.cursor() as cur:
+                cur.execute(f"set statement_timeout = {int(self.statement_timeout_ms)};")
+                cur.execute(sql, params)
+
+                # Some SELECTs might return no rows
+                if cur.description is None:
+                    return QueryResult(columns=[], rows=[])
+
+                cols = [d.name for d in cur.description]
+                data = cur.fetchall()
+
+        rows = [dict(zip(cols, r)) for r in data]
+        return QueryResult(columns=cols, rows=rows)

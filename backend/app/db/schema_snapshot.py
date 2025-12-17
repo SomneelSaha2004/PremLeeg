@@ -1,57 +1,54 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import List
+import os
+import psycopg
 
-# Minimal stub; later introspect Postgres information_schema for real context
 
-def get_schema_context() -> Dict[str, Any]:
-    """Return a lightweight schema context for the LLM prompt.
+ALLOWED_RELATIONS = [
+    ("public", "pl_matches"),
+    ("public", "pl_team_match"),
+    ("public", "pl_season_table"),
+]
 
-    In Phase 1, keep a static glossary. Later, query information_schema
-    for live columns and types.
+
+def build_schema_snapshot() -> str:
     """
-    return {
-        "tables": [
-            {
-                "name": "pl_matches",
-                "description": "One row per EPL match",
-                "columns": [
-                    "match_id",
-                    "season_code",
-                    "season_start",
-                    "div",
-                    "match_date",
-                    "kickoff_time",
-                    "home_team",
-                    "away_team",
-                    "referee",
-                    "ft_home_goals",
-                    "ft_away_goals",
-                    "ft_result",
-                    "ht_home_goals",
-                    "ht_away_goals",
-                    "ht_result",
-                    "home_shots",
-                    "away_shots",
-                    "home_shots_on_target",
-                    "away_shots_on_target",
-                    "home_fouls",
-                    "away_fouls",
-                    "home_corners",
-                    "away_corners",
-                    "home_yellow",
-                    "away_yellow",
-                    "home_red",
-                    "away_red",
-                ],
-            }
-        ],
-        "views": [
-            {"name": "pl_team_match", "description": "One row per team per match with points/W/D/L"},
-            {"name": "pl_season_table", "description": "Season standings with rank"},
-        ],
-        "glossary": {
-            "points": "3 for win, 1 for draw, 0 for loss",
-            "rank": "position in season table",
-        },
-    }
+    Returns a compact schema string the model can use to write SQL.
+    Keeps it small and focused for cost and accuracy.
+    """
+    dsn = os.environ["DATABASE_URL_READONLY"]
+    lines: List[str] = []
+    lines.append("DATABASE SCHEMA (Postgres):")
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        with conn.cursor() as cur:
+            for schema, table in ALLOWED_RELATIONS:
+                # columns for tables/views
+                cur.execute(
+                    """
+                    select column_name, data_type
+                    from information_schema.columns
+                    where table_schema=%s and table_name=%s
+                    order by ordinal_position;
+                    """,
+                    (schema, table),
+                )
+                cols = cur.fetchall()
+                if not cols:
+                    lines.append(f"- {schema}.{table}: (not found)")
+                    continue
+
+                col_str = ", ".join([f"{c} ({t})" for c, t in cols])
+                lines.append(f"- {schema}.{table}: {col_str}")
+
+    # Add a tiny glossary / rules (this improves NL→SQL a lot)
+    lines.append("")
+    lines.append("GLOSSARY / RULES:")
+    lines.append("- Prefer views for analytics:")
+    lines.append("  - public.pl_season_table: season standings (points, rank)")
+    lines.append("  - public.pl_team_match: per-team per-match rows (result, points)")
+    lines.append("  - public.pl_matches: raw match facts + basic stats")
+    lines.append("- 'title' or 'champion' means rank = 1 in pl_season_table for that season_start.")
+    lines.append("- 'since YEAR' means season_start >= YEAR.")
+    lines.append("- Return at most 200 rows (use LIMIT).")
+    return "\n".join(lines)

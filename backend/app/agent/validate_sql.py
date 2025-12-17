@@ -1,46 +1,77 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+from typing import Optional, Set
 
-WRITE_KEYWORDS = re.compile(r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT|REVOKE|COMMENT|MERGE)\b", re.IGNORECASE)
-SELECT_START = re.compile(r"^\s*(WITH|SELECT)\b", re.IGNORECASE)
-SEMI = re.compile(r";+")
-LIMIT_RE = re.compile(r"\bLIMIT\s+(\d+)\b", re.IGNORECASE)
+import sqlglot
+from sqlglot import exp
 
 
-def validate_and_sanitize(sql: str, default_limit: int = 100) -> str:
-    """Enforce a conservative read-only policy and ensure a LIMIT.
+BANNED_REGEX = re.compile(
+    r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|call|do)\b",
+    re.IGNORECASE,
+)
 
-    Rules:
-      - Single statement (no multiple semicolons)
-      - Starts with SELECT or WITH
-      - Reject write keywords
-      - Ensure a numeric LIMIT (append if missing)
-    """
-    if not SELECT_START.search(sql):
-        raise ValueError("Only SELECT/WITH queries are allowed")
+ALLOWED_TABLES: Set[str] = {
+    "pl_matches",
+    "pl_team_match",
+    "pl_season_table",
+}
 
-    # Single statement: strip trailing semicolons and ensure no additional ones inside
-    sql = sql.strip()
-    # If multiple semicolons exist, reject
-    if len(SEMI.findall(sql)) > 1:
-        raise ValueError("Multiple statements are not allowed")
-    # Remove a single trailing semicolon if present
-    sql = re.sub(r";\s*$", "", sql)
+DEFAULT_LIMIT = 200
 
-    if WRITE_KEYWORDS.search(sql):
-        raise ValueError("Write operations are not allowed")
 
-    # Enforce LIMIT
-    m = LIMIT_RE.search(sql)
-    if m:
-        try:
-            n = int(m.group(1))
-            if n <= 0:
-                raise ValueError("LIMIT must be positive")
-        except ValueError as e:  # noqa: PERF203
-            raise ValueError("LIMIT must be a positive integer") from e
-        return sql
+@dataclass
+class ValidatedSQL:
+    sql: str
 
-    # Append LIMIT if missing
-    return f"{sql}\nLIMIT {int(default_limit)}"
+
+class SQLValidationError(ValueError):
+    pass
+
+
+def _ensure_single_statement(sql: str) -> None:
+    parsed = sqlglot.parse(sql, read="postgres")
+    if len(parsed) != 1:
+        raise SQLValidationError("Only a single SQL statement is allowed.")
+
+
+def _ensure_select_only(sql: str) -> None:
+    if BANNED_REGEX.search(sql):
+        raise SQLValidationError("Only read-only SELECT queries are allowed.")
+
+
+def _ensure_allowed_tables(sql: str) -> None:
+    parsed = sqlglot.parse_one(sql, read="postgres")
+    tables = {t.name for t in parsed.find_all(exp.Table)}
+    # Allow schema-qualified names too; we only care about the table identifier
+    if not tables:
+        return
+    unknown = {t for t in tables if t not in ALLOWED_TABLES}
+    if unknown:
+        raise SQLValidationError(f"Query references non-allowed tables/views: {sorted(unknown)}")
+
+
+def _ensure_limit(sql: str, limit: int = DEFAULT_LIMIT) -> str:
+    parsed = sqlglot.parse_one(sql, read="postgres")
+    # If it's a SELECT or a WITH...SELECT, enforce LIMIT
+    select = parsed.find(exp.Select)
+    if select is None:
+        # If model returns something weird, just block it
+        raise SQLValidationError("Only SELECT queries are allowed.")
+    if select.args.get("limit") is None:
+        select.set("limit", exp.Limit(this=exp.Literal.number(limit)))
+        return parsed.sql(dialect="postgres")
+    return sql
+
+
+def validate_and_patch_sql(sql: str, limit: int = DEFAULT_LIMIT) -> ValidatedSQL:
+    sql = (sql or "").strip().rstrip(";")
+    if not sql:
+        raise SQLValidationError("Empty SQL.")
+    _ensure_single_statement(sql)
+    _ensure_select_only(sql)
+    _ensure_allowed_tables(sql)
+    sql = _ensure_limit(sql, limit=limit)
+    return ValidatedSQL(sql=sql)

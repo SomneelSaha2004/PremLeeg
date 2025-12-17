@@ -1,47 +1,58 @@
 from __future__ import annotations
 
-import os
+from dataclasses import dataclass
 from typing import Any, Dict, List
 
-from ..db.client import execute_select
-from ..db.schema_snapshot import get_schema_context
-from ..llm.client import SQLLLM
-from ..models.types import QueryResponse
-from .validate_sql import validate_and_sanitize
+from .prompts import sql_generation_prompt, answer_synthesis_prompt
+from .validate_sql import SQLValidationError, validate_and_patch_sql
+from ..db.client import PostgresClient, QueryResult
+from ..db.schema_snapshot import build_schema_snapshot
+from ..llm.openai_client import OpenAILLM
 
 
-def run_pipeline(question: str, limit: int | None = 100) -> QueryResponse:
-    """
-    Structured pipeline:
-      1) schema context
-      2) generate SQL (LLM placeholder)
-      3) validate SQL (SELECT-only, LIMIT)
-      4) execute with read-only
-      5) summarize (simple for now)
-    """
-    schema = get_schema_context()
+@dataclass
+class PipelineOutput:
+    sql: str
+    columns: List[str]
+    rows: List[Dict[str, Any]]
+    summary: str
 
-    # Step 2: LLM generation (placeholder returns a safe stub if no DB configured)
-    llm = SQLLLM()
-    sql_raw = llm.generate_sql(question=question, schema_context=schema, limit=limit)
 
-    # Step 3: Validate & sanitize
-    sql = validate_and_sanitize(sql_raw, default_limit=limit or 100)
+class AgentPipeline:
+    def __init__(self):
+        self.db = PostgresClient()
+        self.llm = OpenAILLM()
 
-    # Step 4: Execute (may return empty if DB not configured)
-    rows: List[Dict[str, Any]] = []
-    explanation = ""
-    try:
-        rows = execute_select(sql)
-    except Exception as e:  # noqa: BLE001
-        # Keep running even if DB is not reachable so the flow is testable
-        explanation = (
-            "Query not executed: database not reachable or credentials missing. "
-            f"Detail: {type(e).__name__}"
+    def run(self, question: str) -> PipelineOutput:
+        schema = build_schema_snapshot()
+        prompt = sql_generation_prompt(question, schema)
+
+        raw_sql = self.llm.generate_sql(prompt).text.strip()
+        try:
+            validated = validate_and_patch_sql(raw_sql, limit=200)
+        except SQLValidationError as e:
+            return PipelineOutput(
+                sql=raw_sql,
+                columns=[],
+                rows=[],
+                summary=f"Blocked unsafe/invalid SQL: {e}",
+            )
+
+        result: QueryResult = self.db.run_select(validated.sql)
+
+        # IMPORTANT: don't send huge results to the LLM (cost + hallucination risk)
+        synthesis_prompt = answer_synthesis_prompt(
+            question=question,
+            sql=validated.sql,
+            columns=result.columns,
+            rows=result.rows,
+            max_rows=20,
         )
+        summary = self.llm.generate_text(synthesis_prompt).text
 
-    # Step 5: Minimal explanation for now
-    if not explanation:
-        explanation = "Generated and executed SQL based on your question."
-
-    return QueryResponse(sql=sql, rows=rows, explanation=explanation)
+        return PipelineOutput(
+            sql=validated.sql,
+            columns=result.columns,
+            rows=result.rows,
+            summary=summary,
+        )
