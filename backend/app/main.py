@@ -16,5 +16,5 @@ def health():
 
 @app.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest):
-    out = pipeline.run(req.question)
+    out = pipeline.run(req.question, summarize=req.summarize, include_rows=req.include_rows)
     return QueryResponse(sql=out.sql, columns=out.columns, rows=out.rows, summary=out.summary)

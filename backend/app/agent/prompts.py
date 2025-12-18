@@ -1,36 +1,53 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ..context.football_data_notes import FOOTBALL_DATA_NOTES_NON_BETTING
 
 
-def sql_generation_prompt(question: str, schema_snapshot: str) -> str:
-    """
-    Prompt-pack style: clear sections + constraints + tiny examples.
-    Based on OpenAI guidance to structure prompts and keep instructions clear. :contentReference[oaicite:3]{index=3}
-    """
-    return f"""
+def sql_generation_prompt(question: str, schema_snapshot: str, intent_hint: Optional[str] = None) -> str:
+        """
+        Prompt-pack style: clear sections + constraints + examples, with a light intent hint
+        so the model picks the right table (player vs match/team).
+        """
+        intent_line = intent_hint or "unknown"
+        return f"""
 # Role
 You are a senior data analyst. You write correct Postgres SQL for analytics.
 
 # Task
 Convert the user question into ONE Postgres SQL query.
 
+# Intent hint (use to pick the right table)
+- Detected intent: {intent_line}. If player-focused, prefer public.pl_player_standard_stats. If match/team-focused, prefer public.pl_team_match or public.pl_season_table. Only join tables if absolutely required.
+
 # Hard constraints (must follow)
 - Output ONLY the SQL (no markdown, no explanation, no backticks).
 - Read-only only: SELECT or WITH ... SELECT.
 - Single statement only.
-- Use ONLY these relations:
-  - public.pl_matches
-  - public.pl_team_match
-  - public.pl_season_table
-- Always include LIMIT <= 200.
-- Prefer the views:
-  - standings/champions/rank/points -> public.pl_season_table
-  - wins/draws/losses/points per team -> public.pl_team_match
-  - raw match stats (shots, corners, cards, fouls) -> public.pl_matches
+- Allowed relations:
+    - public.pl_player_standard_stats (player-season stats from FBref)
+    - public.pl_matches
+    - public.pl_team_match
+    - public.pl_season_table
+- No JOIN/UNION/EXCEPT/INTERSECT; use a single relation unless absolutely impossible (avoid joins for MVP).
+- Always include LIMIT. Default to LIMIT 50 unless the user explicitly asks for more (never omit LIMIT; keep <= 200 unless user insists).
+- Use season_start for seasons. "since YEAR" -> season_start >= YEAR. If a season is named like 2018/2019, use season_start = 2018. If a vague range is given, default to season_start >= 2000. If the user omits seasons, prefer the latest season or a small recent range.
+- Avoid window functions and expensive wildcards (prefer exact filters). Avoid ILIKE '%term%'; prefer exact or prefix matches.
+- Avoid unnecessary joins; answer from one table when possible.
+
+# Player table guidance (public.pl_player_standard_stats)
+- One row per player-season; unique on (season_start, player, squad).
+- performance_* fields are season totals (e.g., performance_gls = goals, performance_ast = assists).
+- per90_* fields are per-90 rates; include a minutes floor (e.g., playing_time_min >= 900) when comparing per-90 stats.
+- Common filters: season_start, squad (team), pos, playing_time_min.
+- Safe aggregates: SUM(performance_gls) for goals, SUM(performance_ast) for assists.
+
+# Match/team guidance
+- Standings/champions/rank/points -> public.pl_season_table
+- Wins/draws/losses/points per team -> public.pl_team_match
+- Raw match stats (shots, corners, cards, fouls) -> public.pl_matches
 
 # Column reference (non-betting only)
 {FOOTBALL_DATA_NOTES_NON_BETTING}
@@ -56,7 +73,34 @@ SELECT season_start, team
 FROM public.pl_season_table
 WHERE season_start >= 2010 AND rank = 1
 ORDER BY season_start
-LIMIT 200
+LIMIT 50
+
+Example 3:
+Question: Who has the most goals in 2018/2019?
+SQL:
+SELECT player, squad, performance_gls AS goals
+FROM public.pl_player_standard_stats
+WHERE season_start = 2018
+ORDER BY goals DESC
+LIMIT 10
+
+Example 4:
+Question: Best per-90 goal scorers since 2010 (min 900 minutes)
+SQL:
+SELECT player, squad, season_start, per90_gls, playing_time_min
+FROM public.pl_player_standard_stats
+WHERE season_start >= 2010 AND playing_time_min >= 900
+ORDER BY per90_gls DESC
+LIMIT 20
+
+Example 5:
+Question: Latest season top assists (no season provided)
+SQL:
+SELECT player, squad, performance_ast AS assists
+FROM public.pl_player_standard_stats
+WHERE season_start = (SELECT MAX(season_start) FROM public.pl_player_standard_stats)
+ORDER BY assists DESC
+LIMIT 10
 
 # Self-check before final output
 Confirm your SQL:
@@ -104,6 +148,8 @@ Answer the user's question using ONLY the SQL results provided.
 - Use only the provided rows/columns. If no rows, say no data returned.
 - Do NOT invent numbers, teams, or seasons not present.
 - If results may be truncated, avoid global claims unless the SQL guarantees top results.
+- Always mention the season scope and the metric used (e.g., goals, assists, xG, per-90).
+- If relevant, include a short top-N rundown (player/team, season, metric value) using the returned ordering.
 - Be concise: 2–6 sentences.
 
 # Helpful column meanings (non-betting only)

@@ -6,6 +6,8 @@ from pydantic import BaseModel
 
 class QueryRequest(BaseModel):
     question: str
+    summarize: bool = True
+    include_rows: bool = True
 
 
 class QueryResponse(BaseModel):
