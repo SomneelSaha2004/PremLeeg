@@ -3,37 +3,69 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List
 
-from ..context.football_data_notes import FOOTBALL_DATA_NOTES_NON_BETTING
+from app.context.football_data_notes import FOOTBALL_DATA_NOTES_NON_BETTING
 
 
 def sql_generation_prompt(question: str, schema_snapshot: str) -> str:
+    """
+    Prompt-pack style: clear sections + constraints + tiny examples.
+    Based on OpenAI guidance to structure prompts and keep instructions clear. :contentReference[oaicite:3]{index=3}
+    """
     return f"""
-You are a senior data analyst writing Postgres SQL.
+# Role
+You are a senior data analyst. You write correct Postgres SQL for analytics.
 
-GOAL:
-Convert the user's question into ONE Postgres SQL query to answer it.
+# Task
+Convert the user question into ONE Postgres SQL query.
 
-HARD RULES:
-- Output ONLY SQL. No markdown, no explanation, no backticks.
+# Hard constraints (must follow)
+- Output ONLY the SQL (no markdown, no explanation, no backticks).
 - Read-only only: SELECT or WITH ... SELECT.
 - Single statement only.
-- Use only these relations:
+- Use ONLY these relations:
   - public.pl_matches
   - public.pl_team_match
   - public.pl_season_table
 - Always include LIMIT <= 200.
-- Prefer views for analytics:
-  - public.pl_season_table for standings / champions / ranks / points.
-  - public.pl_team_match for wins/draws/losses, points, per-team match rows.
-  - public.pl_matches for raw match stats (shots, cards, corners, fouls, goals).
+- Prefer the views:
+  - standings/champions/rank/points -> public.pl_season_table
+  - wins/draws/losses/points per team -> public.pl_team_match
+  - raw match stats (shots, corners, cards, fouls) -> public.pl_matches
 
-COLUMN MEANINGS (from football-data notes; NON-BETTING ONLY):
+# Column reference (non-betting only)
 {FOOTBALL_DATA_NOTES_NON_BETTING}
 
-DATABASE SCHEMA:
+# Database schema
 {schema_snapshot}
 
-USER QUESTION:
+# Examples (pattern only — adapt to question)
+Example 1:
+Question: Top 5 teams by total wins since 2000
+SQL:
+SELECT team, COUNT(*) AS wins
+FROM public.pl_team_match
+WHERE season_start >= 2000 AND result = 'W'
+GROUP BY team
+ORDER BY wins DESC
+LIMIT 5
+
+Example 2:
+Question: Champions by season since 2010
+SQL:
+SELECT season_start, team
+FROM public.pl_season_table
+WHERE season_start >= 2010 AND rank = 1
+ORDER BY season_start
+LIMIT 200
+
+# Self-check before final output
+Confirm your SQL:
+- uses allowed relations only
+- includes LIMIT
+- is valid Postgres
+- answers the question precisely
+
+# User question
 {question}
 """.strip()
 
@@ -43,31 +75,43 @@ def answer_synthesis_prompt(
     sql: str,
     columns: List[str],
     rows: List[Dict[str, Any]],
-    max_rows: int = 20,
+    returned_row_count: int,
+    max_rows_sent: int = 20,
 ) -> str:
-    """Summarize query results into a grounded natural-language answer."""
-    safe_rows = rows[:max_rows]
+    """
+    Prompt-pack style answer synthesis: grounded + concise + avoids global claims on truncated results.
+    """
     payload = {
         "question": question,
         "sql": sql,
         "columns": columns,
-        "rows": safe_rows,
+        "rows": rows[:max_rows_sent],
+        "returned_row_count": returned_row_count,
+        "note": (
+            f"Only the first {max_rows_sent} rows are shown if the result is larger. "
+            "Do not claim global facts unless the SQL guarantees it (e.g., ORDER BY ... LIMIT)."
+        ),
     }
 
     return f"""
-You are a data analyst answering the user's question based ONLY on the SQL query results provided.
+# Role
+You are a careful data analyst.
 
-RULES:
-- Use only the provided rows/columns. If the result is empty, say you found no data.
-- Do NOT invent numbers, teams, seasons, or facts not present in the rows.
-- Be concise but clear (2-6 sentences).
-- If the query returns a ranking/table, mention the top entries.
+# Task
+Answer the user's question using ONLY the SQL results provided.
 
-Helpful column meanings (NON-BETTING ONLY):
+# Rules (must follow)
+- Use only the provided rows/columns. If no rows, say no data returned.
+- Do NOT invent numbers, teams, or seasons not present.
+- If results may be truncated, avoid global claims unless the SQL guarantees top results.
+- Be concise: 2–6 sentences.
+
+# Helpful column meanings (non-betting only)
 {FOOTBALL_DATA_NOTES_NON_BETTING}
 
-QUERY RESULTS (JSON):
+# Data (JSON)
 {json.dumps(payload, default=str)}
 
-Write the answer now:
+# Output
+Write the final answer in plain English.
 """.strip()
