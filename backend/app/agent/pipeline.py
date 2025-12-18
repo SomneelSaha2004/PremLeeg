@@ -7,7 +7,7 @@ from .prompts import sql_generation_prompt, answer_synthesis_prompt
 from .validate_sql import SQLValidationError, validate_and_patch_sql
 from ..db.client import PostgresClient, QueryResult
 from ..db.schema_snapshot import build_schema_snapshot
-from ..llm.openai_client import OpenAILLM
+from ..llm import OpenAILLM
 
 
 @dataclass
@@ -46,7 +46,8 @@ class AgentPipeline:
             sql=validated.sql,
             columns=result.columns,
             rows=result.rows,
-            max_rows=20,
+            returned_row_count=len(result.rows),
+            max_rows_sent=20,
         )
         summary = self.llm.generate_text(synthesis_prompt).text
 

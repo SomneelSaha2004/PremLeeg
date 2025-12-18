@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List
 
-from app.context.football_data_notes import FOOTBALL_DATA_NOTES_NON_BETTING
+from ..context.football_data_notes import FOOTBALL_DATA_NOTES_NON_BETTING
 
 
 def sql_generation_prompt(question: str, schema_snapshot: str) -> str:

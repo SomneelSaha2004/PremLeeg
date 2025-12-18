@@ -7,4 +7,9 @@ psycopg[binary]==3.2.3
 
 sqlglot==25.0.3
 
-openai==1.57.0
+# Keep compatible with langchain-openai (requires openai>=1.58.1)
+openai==1.58.1
+
+langchain==0.3.14
+langchain-openai==0.2.14
+langchain-core==0.3.29
