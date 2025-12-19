@@ -27,7 +27,13 @@ class PostgresClient:
 
     def run_select(self, sql: str, params: Optional[Tuple[Any, ...]] = None) -> QueryResult:
         params = params or tuple()
-        with psycopg.connect(self.dsn, autocommit=True) as conn:
+        # Disable server-side prepared statements (pgbouncer transaction pooling incompatible)
+        with psycopg.connect(self.dsn, autocommit=True, prepare_threshold=None) as conn:
+            try:
+                conn.prepare_threshold = None
+            except Exception:
+                pass
+
             # Hard timeout at DB level
             with conn.cursor() as cur:
                 cur.execute(f"set statement_timeout = {int(self.statement_timeout_ms)};")

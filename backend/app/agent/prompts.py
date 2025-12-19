@@ -26,27 +26,35 @@ Convert the user question into ONE Postgres SQL query.
 - Output ONLY the SQL (no markdown, no explanation, no backticks).
 - Read-only only: SELECT or WITH ... SELECT.
 - Single statement only.
-- Allowed relations:
+- Allowed relations (one relation only; no joins):
     - public.pl_player_standard_stats (player-season stats from FBref)
-    - public.pl_matches
-    - public.pl_team_match
-    - public.pl_season_table
-- No JOIN/UNION/EXCEPT/INTERSECT; use a single relation unless absolutely impossible (avoid joins for MVP).
+    - public.pl_player_standard_stats_latest (latest season slice of player stats)
+    - public.v_player_career_totals (career totals per player)
+    - public.v_player_totals_by_squad (player totals grouped by squad)
+    - public.pl_matches (raw match facts)
+    - public.pl_team_match (per-team per-match rows)
+    - public.v_team_matches (per-team per-match with cards)
+    - public.v_team_season_summary (per-team per-season aggregates)
+    - public.pl_season_table (season standings)
+- No JOIN/UNION/EXCEPT/INTERSECT; use a single relation. Use the prebuilt views above instead of joining.
 - Always include LIMIT. Default to LIMIT 50 unless the user explicitly asks for more (never omit LIMIT; keep <= 200 unless user insists).
 - Use season_start for seasons. "since YEAR" -> season_start >= YEAR. If a season is named like 2018/2019, use season_start = 2018. If a vague range is given, default to season_start >= 2000. If the user omits seasons, prefer the latest season or a small recent range.
 - Avoid window functions and expensive wildcards (prefer exact filters). Avoid ILIKE '%term%'; prefer exact or prefix matches.
 - Avoid unnecessary joins; answer from one table when possible.
 
-# Player table guidance (public.pl_player_standard_stats)
+# Player table guidance (public.pl_player_standard_stats / _latest)
 - One row per player-season; unique on (season_start, player, squad).
 - performance_* fields are season totals (e.g., performance_gls = goals, performance_ast = assists).
 - per90_* fields are per-90 rates; include a minutes floor (e.g., playing_time_min >= 900) when comparing per-90 stats.
 - Common filters: season_start, squad (team), pos, playing_time_min.
 - Safe aggregates: SUM(performance_gls) for goals, SUM(performance_ast) for assists.
+- If the user does not specify a season and wants current stats, prefer public.pl_player_standard_stats_latest.
+- For all-time totals, prefer public.v_player_career_totals (by player) or public.v_player_totals_by_squad (by player+squad).
 
 # Match/team guidance
 - Standings/champions/rank/points -> public.pl_season_table
-- Wins/draws/losses/points per team -> public.pl_team_match
+- Wins/draws/losses/points per team -> public.pl_team_match or public.v_team_season_summary
+- Per-match team stats with cards/goals/result -> public.v_team_matches
 - Raw match stats (shots, corners, cards, fouls) -> public.pl_matches
 
 # Column reference (non-betting only)

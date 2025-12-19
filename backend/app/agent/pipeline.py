@@ -67,15 +67,23 @@ class AgentPipeline:
         self.db = PostgresClient()
         self.llm = OpenAILLM()
 
-    def run(self, question: str, summarize: bool = True, include_rows: bool = True) -> PipelineOutput:
+    def run(
+        self,
+        question: str,
+        summarize: bool = True,
+        include_rows: bool = True,
+        raise_on_error: bool = False,
+    ) -> PipelineOutput:
         schema = build_schema_snapshot()
         intent = classify_intent(question)
-        prompt = sql_generation_prompt(question, schema, intent_hint=intent)
+        prompt = sql_generation_prompt(question, schema.schema_text, intent_hint=intent)
 
         raw_sql = self.llm.generate_sql(prompt).text.strip()
         try:
-            validated = validate_and_patch_sql(raw_sql, limit=50)
+            validated = validate_and_patch_sql(raw_sql, limit=50, allowed_columns=schema.allowed_columns)
         except SQLValidationError as e:
+            if raise_on_error:
+                raise
             return PipelineOutput(
                 sql=raw_sql,
                 columns=[],
@@ -83,7 +91,17 @@ class AgentPipeline:
                 summary=f"Blocked unsafe/invalid SQL: {e}",
             )
 
-        result: QueryResult = self.db.run_select(validated.sql)
+        try:
+            result: QueryResult = self.db.run_select(validated.sql)
+        except Exception as db_exc:
+            if raise_on_error:
+                raise
+            return PipelineOutput(
+                sql=validated.sql,
+                columns=[],
+                rows=[],
+                summary=f"Database error: {db_exc}",
+            )
 
         summary = ""
         if summarize:

@@ -1,0 +1,844 @@
+{
+  "generated_at": "2025-12-19T20:41:29Z",
+  "include_schemas": [
+    "public"
+  ],
+  "stats": {
+    "relations": 10,
+    "tables": 2,
+    "views": 8
+  },
+  "relations": [
+    {
+      "schema": "public",
+      "name": "pl_matches",
+      "type": "table",
+      "row_estimate": 12484,
+      "columns": [
+        {
+          "name": "match_id",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "season_code",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "season_start",
+          "type": "smallint",
+          "not_null": true
+        },
+        {
+          "name": "div",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "match_date",
+          "type": "date",
+          "not_null": true
+        },
+        {
+          "name": "kickoff_time",
+          "type": "time without time zone",
+          "not_null": false
+        },
+        {
+          "name": "home_team",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "away_team",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "referee",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "ft_home_goals",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "ft_away_goals",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "ft_result",
+          "type": "character",
+          "not_null": false
+        },
+        {
+          "name": "ht_home_goals",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "ht_away_goals",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "ht_result",
+          "type": "character",
+          "not_null": false
+        },
+        {
+          "name": "home_shots",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "away_shots",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "home_shots_on_target",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "away_shots_on_target",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "home_fouls",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "away_fouls",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "home_corners",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "away_corners",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "home_yellow",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "away_yellow",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "home_red",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "away_red",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "inserted_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "pl_matches_away",
+          "unique": false,
+          "method": "btree",
+          "cols": [
+            "away_team"
+          ],
+          "def": "CREATE INDEX pl_matches_away ON public.pl_matches USING btree (away_team)"
+        },
+        {
+          "name": "pl_matches_home",
+          "unique": false,
+          "method": "btree",
+          "cols": [
+            "home_team"
+          ],
+          "def": "CREATE INDEX pl_matches_home ON public.pl_matches USING btree (home_team)"
+        },
+        {
+          "name": "pl_matches_nk",
+          "unique": true,
+          "method": "btree",
+          "cols": [
+            "season_code",
+            "match_date",
+            "home_team",
+            "away_team"
+          ],
+          "def": "CREATE UNIQUE INDEX pl_matches_nk ON public.pl_matches USING btree (season_code, match_date, home_team, away_team)"
+        },
+        {
+          "name": "pl_matches_pkey",
+          "unique": true,
+          "method": "btree",
+          "cols": [
+            "match_id"
+          ],
+          "def": "CREATE UNIQUE INDEX pl_matches_pkey ON public.pl_matches USING btree (match_id)"
+        },
+        {
+          "name": "pl_matches_season_date",
+          "unique": false,
+          "method": "btree",
+          "cols": [
+            "season_start",
+            "match_date"
+          ],
+          "def": "CREATE INDEX pl_matches_season_date ON public.pl_matches USING btree (season_start, match_date)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "pl_player_standard_stats",
+      "type": "table",
+      "row_estimate": 18008,
+      "columns": [
+        {
+          "name": "player_season_id",
+          "type": "bigint",
+          "not_null": true
+        },
+        {
+          "name": "season",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "season_start",
+          "type": "smallint",
+          "not_null": true
+        },
+        {
+          "name": "rk",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "player",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "nation",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "pos",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "squad",
+          "type": "text",
+          "not_null": true
+        },
+        {
+          "name": "age_raw",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "born_year",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "age_years",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "age_days",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "playing_time_mp",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "playing_time_starts",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "playing_time_min",
+          "type": "integer",
+          "not_null": false
+        },
+        {
+          "name": "playing_time_90s",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "performance_gls",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "performance_ast",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "performance_g_plus_a",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "performance_g_minus_pk",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "performance_pk",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "performance_pkatt",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "performance_crdy",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "performance_crdr",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "expected_xg",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "expected_npxg",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "expected_xag",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "expected_npxg_plus_xag",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "progression_prgc",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "progression_prgp",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "progression_prgr",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "per90_gls",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "per90_ast",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "per90_g_plus_a",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "per90_g_minus_pk",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "per90_g_plus_a_minus_pk",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "per90_xg",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "per90_xag",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "per90_xg_plus_xag",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "per90_npxg",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "per90_npxg_plus_xag",
+          "type": "double precision",
+          "not_null": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "not_null": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "pl_player_standard_stats_pkey",
+          "unique": true,
+          "method": "btree",
+          "cols": [
+            "player_season_id"
+          ],
+          "def": "CREATE UNIQUE INDEX pl_player_standard_stats_pkey ON public.pl_player_standard_stats USING btree (player_season_id)"
+        },
+        {
+          "name": "pl_player_stats_player_idx",
+          "unique": false,
+          "method": "btree",
+          "cols": [
+            "player"
+          ],
+          "def": "CREATE INDEX pl_player_stats_player_idx ON public.pl_player_standard_stats USING btree (player)"
+        },
+        {
+          "name": "pl_player_stats_season_start_idx",
+          "unique": false,
+          "method": "btree",
+          "cols": [
+            "season_start"
+          ],
+          "def": "CREATE INDEX pl_player_stats_season_start_idx ON public.pl_player_standard_stats USING btree (season_start)"
+        },
+        {
+          "name": "pl_player_stats_squad_season_idx",
+          "unique": false,
+          "method": "btree",
+          "cols": [
+            "squad",
+            "season_start"
+          ],
+          "def": "CREATE INDEX pl_player_stats_squad_season_idx ON public.pl_player_standard_stats USING btree (squad, season_start)"
+        },
+        {
+          "name": "pl_player_stats_uniq",
+          "unique": true,
+          "method": "btree",
+          "cols": [
+            "season_start",
+            "player",
+            "squad"
+          ],
+          "def": "CREATE UNIQUE INDEX pl_player_stats_uniq ON public.pl_player_standard_stats USING btree (season_start, player, squad)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "pl_player_standard_stats_latest",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [],
+      "indexes": [],
+      "definition": " SELECT player_season_id,\n    season,\n    season_start,\n    rk,\n    player,\n    nation,\n    pos,\n    squad,\n    age_raw,\n    born_year,\n    age_years,\n    age_days,\n    playing_time_mp,\n    playing_time_starts,\n    playing_time_min,\n    playing_time_90s,\n    performance_gls,\n    performance_ast,\n    performance_g_plus_a,\n    performance_g_minus_pk,\n    performance_pk,\n    performance_pkatt,\n    performance_crdy,\n    performance_crdr,\n    expected_xg,\n    expected_npxg,\n    expected_xag,\n    expected_npxg_plus_xag,\n    progression_prgc,\n    progression_prgp,\n    progression_prgr,\n    per90_gls,\n    per90_ast,\n    per90_g_plus_a,\n    per90_g_minus_pk,\n    per90_g_plus_a_minus_pk,\n    per90_xg,\n    per90_xag,\n    per90_xg_plus_xag,\n    per90_npxg,\n    per90_npxg_plus_xag,\n    created_at\n   FROM pl_player_standard_stats\n  WHERE season_start = (( SELECT max(pl_player_standard_stats_1.season_start) AS max\n           FROM pl_player_standard_stats pl_player_standard_stats_1));"
+    },
+    {
+      "schema": "public",
+      "name": "pl_season_table",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "season_start",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "season_code",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "team",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "played",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "wins",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "draws",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "losses",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "gf",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "ga",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "gd",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "points",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "rank",
+          "type": "bigint",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " SELECT season_start,\n    season_code,\n    team,\n    count(*) AS played,\n    sum(\n        CASE\n            WHEN result = 'W'::text THEN 1\n            ELSE 0\n        END) AS wins,\n    sum(\n        CASE\n            WHEN result = 'D'::text THEN 1\n            ELSE 0\n        END) AS draws,\n    sum(\n        CASE\n            WHEN result = 'L'::text THEN 1\n            ELSE 0\n        END) AS losses,\n    sum(goals_for) AS gf,\n    sum(goals_against) AS ga,\n    sum(goals_for) - sum(goals_against) AS gd,\n    sum(points) AS points,\n    dense_rank() OVER (PARTITION BY season_start ORDER BY (sum(points)) DESC, (sum(goals_for) - sum(goals_against)) DESC, (sum(goals_for)) DESC) AS rank\n   FROM pl_team_match\n  GROUP BY season_start, season_code, team;"
+    },
+    {
+      "schema": "public",
+      "name": "pl_team_match",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "match_id",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "season_code",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "season_start",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "match_date",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "kickoff_time",
+          "type": "time without time zone",
+          "not_null": false
+        },
+        {
+          "name": "team",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "opponent",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "is_home",
+          "type": "boolean",
+          "not_null": false
+        },
+        {
+          "name": "goals_for",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "goals_against",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "result",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "points",
+          "type": "integer",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " WITH base AS (\n         SELECT pl_matches.match_id,\n            pl_matches.season_code,\n            pl_matches.season_start,\n            pl_matches.match_date,\n            pl_matches.kickoff_time,\n            pl_matches.home_team,\n            pl_matches.away_team,\n            pl_matches.ft_home_goals,\n            pl_matches.ft_away_goals\n           FROM pl_matches\n        )\n SELECT base.match_id,\n    base.season_code,\n    base.season_start,\n    base.match_date,\n    base.kickoff_time,\n    base.home_team AS team,\n    base.away_team AS opponent,\n    true AS is_home,\n    base.ft_home_goals AS goals_for,\n    base.ft_away_goals AS goals_against,\n        CASE\n            WHEN base.ft_home_goals > base.ft_away_goals THEN 'W'::text\n            WHEN base.ft_home_goals = base.ft_away_goals THEN 'D'::text\n            ELSE 'L'::text\n        END AS result,\n        CASE\n            WHEN base.ft_home_goals > base.ft_away_goals THEN 3\n            WHEN base.ft_home_goals = base.ft_away_goals THEN 1\n            ELSE 0\n        END AS points\n   FROM base\nUNION ALL\n SELECT base.match_id,\n    base.season_code,\n    base.season_start,\n    base.match_date,\n    base.kickoff_time,\n    base.away_team AS team,\n    base.home_team AS opponent,\n    false AS is_home,\n    base.ft_away_goals AS goals_for,\n    base.ft_home_goals AS goals_against,\n        CASE\n            WHEN base.ft_away_goals > base.ft_home_goals THEN 'W'::text\n            WHEN base.ft_away_goals = base.ft_home_goals THEN 'D'::text\n            ELSE 'L'::text\n        END AS result,\n        CASE\n            WHEN base.ft_away_goals > base.ft_home_goals THEN 3\n            WHEN base.ft_away_goals = base.ft_home_goals THEN 1\n            ELSE 0\n        END AS points\n   FROM base;"
+    },
+    {
+      "schema": "public",
+      "name": "v_player_career_totals",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "player",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "goals",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "assists",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "minutes",
+          "type": "bigint",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " SELECT player,\n    sum(COALESCE(performance_gls::integer, 0)) AS goals,\n    sum(COALESCE(performance_ast::integer, 0)) AS assists,\n    sum(COALESCE(playing_time_min, 0)) AS minutes\n   FROM pl_player_standard_stats\n  GROUP BY player;"
+    },
+    {
+      "schema": "public",
+      "name": "v_player_totals_by_squad",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "squad",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "player",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "goals",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "assists",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "minutes",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "born_year",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "pos",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "nation",
+          "type": "text",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " SELECT squad,\n    player,\n    sum(COALESCE(performance_gls::integer, 0)) AS goals,\n    sum(COALESCE(performance_ast::integer, 0)) AS assists,\n    sum(COALESCE(playing_time_min, 0)) AS minutes,\n    min(born_year) AS born_year,\n    min(pos) AS pos,\n    min(nation) AS nation\n   FROM pl_player_standard_stats\n  GROUP BY squad, player;"
+    },
+    {
+      "schema": "public",
+      "name": "v_team_matches",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "season_start",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "match_date",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "team",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "opponent",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "is_home",
+          "type": "boolean",
+          "not_null": false
+        },
+        {
+          "name": "goals_for",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "goals_against",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "yellows",
+          "type": "integer",
+          "not_null": false
+        },
+        {
+          "name": "reds",
+          "type": "integer",
+          "not_null": false
+        },
+        {
+          "name": "result",
+          "type": "text",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " SELECT pl_matches.season_start,\n    pl_matches.match_date,\n    pl_matches.home_team AS team,\n    pl_matches.away_team AS opponent,\n    true AS is_home,\n    pl_matches.ft_home_goals AS goals_for,\n    pl_matches.ft_away_goals AS goals_against,\n    COALESCE(pl_matches.home_yellow::integer, 0) AS yellows,\n    COALESCE(pl_matches.home_red::integer, 0) AS reds,\n        CASE\n            WHEN pl_matches.ft_home_goals > pl_matches.ft_away_goals THEN 'W'::text\n            WHEN pl_matches.ft_home_goals < pl_matches.ft_away_goals THEN 'L'::text\n            ELSE 'D'::text\n        END AS result\n   FROM pl_matches\nUNION ALL\n SELECT pl_matches.season_start,\n    pl_matches.match_date,\n    pl_matches.away_team AS team,\n    pl_matches.home_team AS opponent,\n    false AS is_home,\n    pl_matches.ft_away_goals AS goals_for,\n    pl_matches.ft_home_goals AS goals_against,\n    COALESCE(pl_matches.away_yellow::integer, 0) AS yellows,\n    COALESCE(pl_matches.away_red::integer, 0) AS reds,\n        CASE\n            WHEN pl_matches.ft_away_goals > pl_matches.ft_home_goals THEN 'W'::text\n            WHEN pl_matches.ft_away_goals < pl_matches.ft_home_goals THEN 'L'::text\n            ELSE 'D'::text\n        END AS result\n   FROM pl_matches;"
+    },
+    {
+      "schema": "public",
+      "name": "v_team_season_summary",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "season_start",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "team",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "played",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "wins",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "draws",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "losses",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "goals_for",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "goals_against",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "goal_diff",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "points",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "yellows",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "reds",
+          "type": "bigint",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " SELECT season_start,\n    team,\n    count(*) AS played,\n    sum((result = 'W'::text)::integer) AS wins,\n    sum((result = 'D'::text)::integer) AS draws,\n    sum((result = 'L'::text)::integer) AS losses,\n    sum(goals_for) AS goals_for,\n    sum(goals_against) AS goals_against,\n    sum(goals_for - goals_against) AS goal_diff,\n    sum(\n        CASE result\n            WHEN 'W'::text THEN 3\n            WHEN 'D'::text THEN 1\n            ELSE 0\n        END) AS points,\n    sum(yellows) AS yellows,\n    sum(reds) AS reds\n   FROM v_team_matches\n  GROUP BY season_start, team;"
+    }
+  ]
+}
