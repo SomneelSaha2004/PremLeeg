@@ -7,6 +7,13 @@ from typing import Dict, List, Optional, Set
 import sqlglot
 from sqlglot import exp
 
+from .club_metrics_routing import (
+    ClubMetricIntent,
+    route_club_metric,
+    validate_club_source_selection,
+    get_club_metric_hint,
+)
+
 
 BANNED_REGEX = re.compile(
     r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|call|do)\b",
@@ -254,6 +261,13 @@ def _ensure_allowed_columns(sql: str, allowed_columns: Optional[Dict[str, Set[st
     if not tables:
         return
     
+    # Collect all aliases defined in SELECT clauses (these are computed, not table columns)
+    # This includes: COUNT(*) AS titles, SUM(goals_for) AS total_goals, etc.
+    select_aliases: Set[str] = set()
+    for alias in parsed.find_all(exp.Alias):
+        if alias.alias:
+            select_aliases.add(alias.alias.lower())
+    
     # For queries with CTEs or subqueries, we may have multiple tables
     # Just validate columns for tables we know about
     for table in tables:
@@ -268,6 +282,9 @@ def _ensure_allowed_columns(sql: str, allowed_columns: Optional[Dict[str, Set[st
         for col in parsed.find_all(exp.Column):
             # Skip wildcards and numeric literals
             if col.name in (None, "*"):
+                continue
+            # Skip if this is a reference to a computed alias
+            if col.name.lower() in select_aliases:
                 continue
             # If column has a table qualifier, check if it matches
             if col.table:
@@ -322,6 +339,11 @@ def _detect_intent_mismatch(sql: str, question: Optional[str]) -> Optional[str]:
     q_lower = question.lower()
     parsed = sqlglot.parse_one(sql, read="postgres")
     tables = {t.name for t in parsed.find_all(exp.Table)}
+    
+    # NEW: Check club-level routing validation first
+    club_warning = validate_club_source_selection(sql, question)
+    if club_warning:
+        return club_warning
     
     # Check for streak intent mismatch
     streak_view = detect_streak_intent(question)

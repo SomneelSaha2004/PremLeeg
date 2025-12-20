@@ -5,6 +5,13 @@ from typing import Any, Dict, List, Optional
 
 from .prompts import sql_generation_prompt, answer_synthesis_prompt
 from .validate_sql import SQLValidationError, validate_and_patch_sql, detect_streak_intent
+from .club_metrics_routing import (
+    get_club_metric_hint,
+    route_club_metric,
+    ClubMetricIntent,
+    CLUB_RETRY_TOKEN,
+    format_retry_token,
+)
 from ..db.client import PostgresClient, QueryResult
 from ..db.schema_snapshot import build_schema_snapshot
 from ..context.team_names import get_team_filter_hint
@@ -147,6 +154,15 @@ class AgentPipeline:
         streak_hint = get_streak_hint(question)
         team_hint = get_team_filter_hint(question)
         
+        # NEW: Get club-level routing hint
+        club_routing = route_club_metric(question)
+        club_hint = get_club_metric_hint(question)
+        
+        # Check for ambiguous club routing that requires clarification
+        if club_routing.is_ambiguous and club_routing.intent != ClubMetricIntent.NOT_CLUB:
+            # Log the ambiguity but continue with best-effort routing
+            pass  # Will include hint in the prompt
+        
         max_retries = 2  # Increased from 1 to allow more retry attempts
         last_error = None
         raw_sql = ""
@@ -164,6 +180,9 @@ class AgentPipeline:
                     hints.append(streak_hint)
                 if team_hint:
                     hints.append(team_hint)
+                # NEW: Add club routing hint
+                if club_hint:
+                    hints.append(club_hint)
                 
                 # Build error context for retries
                 error_context = last_error

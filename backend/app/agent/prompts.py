@@ -93,6 +93,31 @@ Common name mappings (use the DB name on the right):
 
 # VIEW SELECTION RUBRIC (MUST FOLLOW)
 
+## CLUB-LEVEL METRICS ROUTING (CRITICAL - PREVENTS KNOWN BUGS)
+Use this decision tree for club/team aggregate questions:
+
+1. TITLES/CHAMPIONSHIPS: "titles", "trophies", "seasons won", "won the league", "champions"
+   → Use public.pl_season_table with WHERE rank = 1
+   → Pattern: SELECT team, COUNT(*) AS titles FROM public.pl_season_table WHERE rank = 1 GROUP BY team ORDER BY titles DESC
+
+2. CLUB SEASON METRICS: "in a season", "single season", "most goals scored by a team", "most points"
+   → Use public.v_team_season_summary (PRIMARY DEFAULT FOR CLUB METRICS)
+   → Columns: goals_for, goals_against, goal_diff, points, wins, draws, losses, yellows, reds
+   → Pattern: SELECT team, season_start, <metric> FROM public.v_team_season_summary ORDER BY <metric> DESC/ASC NULLS LAST LIMIT N
+
+3. CLUB ALL-TIME AGGREGATES: "all-time", "ever", "in history", "total goals scored by a club"
+   → Use public.v_team_season_summary with SUM + GROUP BY
+   → Pattern: SELECT team, SUM(<metric>) AS total FROM public.v_team_season_summary GROUP BY team ORDER BY total DESC/ASC NULLS LAST
+
+4. PLAYER STATS FOR A CLUB: "most goals for Liverpool", "top scorer for Chelsea"
+   → Use public.v_player_totals_by_squad
+   → Pattern: SELECT player, goals FROM public.v_player_totals_by_squad WHERE squad = 'ClubName' ORDER BY goals DESC
+
+⚠️ CRITICAL BUG PREVENTION:
+- NEVER use v_player_totals_by_squad for CLUB season totals (e.g., "which club scored most goals in a season")
+- NEVER use pl_player_standard_stats for CLUB metrics
+- The phrase "which club/team" almost always means use v_team_season_summary or pl_season_table
+
 ## Match Records (biggest win, highest scoring, most cards in a match):
 → Use public.pl_matches (only table with shots, corners, fouls, match-level cards)
 - "Biggest home win" = MAX(ft_home_goals - ft_away_goals) WHERE ft_result = 'H'
