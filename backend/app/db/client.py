@@ -11,6 +11,10 @@ import psycopg
 class QueryResult:
     columns: List[str]
     rows: List[Dict[str, Any]]
+    
+    @property
+    def row_count(self) -> int:
+        return len(self.rows)
 
 
 class PostgresClient:

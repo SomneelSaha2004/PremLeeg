@@ -3,6 +3,9 @@
 Sends each question to the /query API and prints SQL, summary, and row samples.
 Expected answers are documented for quick eyeballing; no automated asserts here.
 Set API_URL env var to point at the running FastAPI service (default http://localhost:8000/query).
+
+IMPORTANT: These golden prompts are for EVALUATION ONLY and must NOT be embedded
+in the runtime SQL generation prompts to avoid data leakage.
 """
 
 import json
@@ -14,112 +17,151 @@ import requests
 API_URL = os.getenv("API_URL", "http://localhost:8000/query")
 
 # Golden questions with expected human answers (ASCII only)
+# These test various failure modes: ties, complete seasons, streaks, team vs player disambiguation
 GOLDEN: List[Dict[str, str]] = [
+    # === MATCH RECORDS (test ties) ===
     {
-        "question": "Biggest PL home win ever?",
-        "expected": "9-0 (Man United vs Ipswich, 4 Mar 1995); 9-0 (Man United vs Southampton, 2 Feb 2021); 9-0 (Liverpool vs Bournemouth, 27 Aug 2022).",
+        "question": "What's the biggest home win ever recorded in the Premier League?",
+        "expected": "Multiple 9-0 wins: Man United 9-0 Ipswich Town (4 Mar 1995); Man United 9-0 Southampton (2 Feb 2021); Liverpool 9-0 AFC Bournemouth (27 Aug 2022). Should return ALL ties.",
+        "tests": "TIE-SAFE pattern for home wins",
     },
     {
-        "question": "Biggest PL away win ever?",
-        "expected": "Southampton 0-9 Leicester City (25 Oct 2019).",
+        "question": "What's the biggest away win in Premier League history?",
+        "expected": "Southampton 0-9 Leicester City (25 Oct 2019). 9-goal margin.",
+        "tests": "TIE-SAFE pattern for away wins",
     },
     {
-        "question": "Highest-scoring PL match ever?",
-        "expected": "Portsmouth 7-4 Reading (29 Sep 2007).",
+        "question": "What is the highest-scoring match in Premier League history?",
+        "expected": "Portsmouth 7-4 Reading (29 Sep 2007). 11 goals total.",
+        "tests": "TIE-SAFE pattern for total goals",
     },
     {
-        "question": "Highest-scoring PL draw ever?",
-        "expected": "West Brom 5-5 Manchester United (19 May 2013).",
+        "question": "What's the highest-scoring draw ever in the Premier League?",
+        "expected": "West Brom 5-5 Man United (19 May 2013). 10 goals total.",
+        "tests": "TIE-SAFE pattern with draw filter",
+    },
+    
+    # === TEAM SEASON RECORDS (test complete-season filter + ties) ===
+    {
+        "question": "Which team collected the most points in a single Premier League season?",
+        "expected": "100 points by Manchester City (2017/18). Must use v_team_season_summary or pl_season_table, NOT player views.",
+        "tests": "COMPLETE-SEASON filter + correct view selection (team not player)",
     },
     {
-        "question": "Highest PL single-match attendance ever?",
-        "expected": "83,222 at Wembley Stadium, Tottenham vs Arsenal (10 Feb 2018).",
+        "question": "Which team scored the most goals in a single Premier League season?",
+        "expected": "106 goals by Manchester City (2017/18). Must use v_team_season_summary.goals_for or pl_season_table.gf.",
+        "tests": "COMPLETE-SEASON filter + team view (NOT v_player_totals_by_squad)",
     },
     {
-        "question": "Highest PL season average attendance ever?",
-        "expected": "75,821 at Old Trafford, Manchester United (2006/07).",
+        "question": "Which team conceded the fewest goals in a Premier League season?",
+        "expected": "15 goals conceded by Chelsea (2004/05). Must filter out incomplete 2025 season.",
+        "tests": "COMPLETE-SEASON filter critical (avoid partial 2025 data)",
     },
     {
-        "question": "Most points in a PL season (club) and who did it?",
-        "expected": "100 by Manchester City (2017/18).",
+        "question": "Which team conceded the most goals in a Premier League season?",
+        "expected": "104 goals conceded by Sheffield United (2023/24).",
+        "tests": "COMPLETE-SEASON filter + TIE-SAFE",
     },
     {
-        "question": "Most goals scored in a PL season (club) and who did it?",
-        "expected": "106 by Manchester City (2017/18).",
+        "question": "Which team had the fewest points in a Premier League season?",
+        "expected": "11 points by Derby County (2007/08). Must filter out incomplete 2025 season.",
+        "tests": "COMPLETE-SEASON filter critical (avoid partial 2025 data)",
     },
     {
-        "question": "Fewest goals conceded in a PL season (club) and who did it?",
-        "expected": "15 by Chelsea (2004/05).",
+        "question": "Which team won the most games in a single Premier League season?",
+        "expected": "32 wins by Manchester City (2017/18 and 2018/19) and Liverpool (2019/20). Should return ALL ties.",
+        "tests": "COMPLETE-SEASON + TIE-SAFE for multiple tied records",
+    },
+    
+    # === TEAM DISCIPLINE (test correct view) ===
+    {
+        "question": "Which team received the most yellow cards in a single Premier League season?",
+        "expected": "105 yellow cards by Chelsea (2023/24). Must use v_team_season_summary.yellows.",
+        "tests": "Correct view selection (v_team_season_summary has yellows)",
     },
     {
-        "question": "Most goals conceded in a PL season (club) and who did it?",
-        "expected": "104 by Sheffield United (2023/24).",
+        "question": "Which team got the most red cards in a single Premier League season?",
+        "expected": "9 red cards by Sunderland (2009/10) and QPR (2011/12). Should return ALL ties.",
+        "tests": "TIE-SAFE + v_team_season_summary.reds",
+    },
+    
+    # === STREAK QUESTIONS (test window function patterns) ===
+    {
+        "question": "What is the longest winning streak by a team in the Premier League?",
+        "expected": "18 consecutive wins by Manchester City (Aug-Dec 2017) and Liverpool (Oct 2019-Feb 2020).",
+        "tests": "WINNING STREAK pattern with window functions",
     },
     {
-        "question": "Most wins in a PL season (club) and who did it?",
-        "expected": "32 by Manchester City (2017/18 and 2018/19) and Liverpool (2019/20).",
+        "question": "Which team went the longest unbeaten in Premier League history?",
+        "expected": "49 games unbeaten by Arsenal (May 2003-Oct 2004).",
+        "tests": "UNBEATEN STREAK pattern with window functions",
+    },
+    
+    # === PLAYER SINGLE-SEASON RECORDS (test correct view + ties) ===
+    {
+        "question": "Who scored the most goals in a single Premier League season?",
+        "expected": "36 goals by Erling Haaland (2022/23). Use pl_player_standard_stats.",
+        "tests": "Player single-season record (NOT career totals)",
     },
     {
-        "question": "Longest PL winning streak (consecutive wins) and who did it?",
-        "expected": "18 by Manchester City (Aug-Dec 2017) and Liverpool (Oct 2019-Feb 2020).",
+        "question": "Who provided the most assists in a single Premier League season?",
+        "expected": "20 assists by Thierry Henry (2002/03) and Kevin De Bruyne (2019/20). Should return ALL ties.",
+        "tests": "TIE-SAFE for player assists record",
     },
     {
-        "question": "Longest PL unbeaten run and who did it?",
-        "expected": "49 by Arsenal (May 2003-Oct 2004).",
+        "question": "Which player had the most combined goals and assists in a single Premier League season?",
+        "expected": "47 goal involvements by Andy Cole (1993/94), Alan Shearer (1994/95), and Mohamed Salah (2024/25). Should return ALL ties.",
+        "tests": "TIE-SAFE for combined stat (performance_g_plus_a)",
+    },
+    
+    # === PLAYER CAREER/CLUB RECORDS (test view selection) ===
+    {
+        "question": "Who is the Premier League's all-time leading goal scorer?",
+        "expected": "260 goals by Alan Shearer (1992/93-2005/06). Use v_player_career_totals.",
+        "tests": "ALL-TIME = v_player_career_totals (not single season)",
     },
     {
-        "question": "Fewest points in a PL season (club) and who did it?",
-        "expected": "11 by Derby County (2007/08).",
+        "question": "Who is the Premier League's all-time assist leader?",
+        "expected": "162 assists by Ryan Giggs (1992/93-2013/14). Use v_player_career_totals.",
+        "tests": "ALL-TIME = v_player_career_totals",
     },
     {
-        "question": "Most yellow cards by a club in a single PL season?",
-        "expected": "105 by Chelsea (2023/24).",
-    },
-    {
-        "question": "Most red cards by a club in a single PL season?",
-        "expected": "9 by Sunderland (2009/10) and 9 by QPR (2011/12).",
-    },
-    {
-        "question": "Most goals by a player in a single PL season?",
-        "expected": "36 by Erling Haaland (2022/23).",
-    },
-    {
-        "question": "Most assists by a player in a single PL season?",
-        "expected": "20 by Thierry Henry (2002/03) and 20 by Kevin De Bruyne (2019/20).",
-    },
-    {
-        "question": "Most goal involvements (goals + assists) by a player in a PL season?",
-        "expected": "47 by Andy Cole (1993/94), 47 by Alan Shearer (1993/94), 47 by Mohamed Salah (2024/25).",
-    },
-    {
-        "question": "Most PL goals for a single club (player + club + total)?",
-        "expected": "213 by Harry Kane (Tottenham Hotspur, 2013/14-2022/23).",
+        "question": "Which player scored the most Premier League goals for a single club?",
+        "expected": "213 goals by Harry Kane for Tottenham Hotspur (2013/14-2022/23). Use v_player_totals_by_squad.",
+        "tests": "CLUB-SPECIFIC = v_player_totals_by_squad (not career totals)",
     },
 ]
 
 
 def run_all():
     print(f"Using API_URL={API_URL}")
+    passed = 0
+    failed = 0
+    
     for idx, item in enumerate(GOLDEN, start=1):
         q = item["question"]
         expected = item["expected"]
+        tests = item.get("tests", "")
         print("\n" + "=" * 80)
         print(f"[{idx}] Question: {q}")
         print(f"Expected: {expected}")
+        print(f"Tests: {tests}")
 
         try:
             resp = requests.post(
                 API_URL,
                 headers={"Content-Type": "application/json"},
                 data=json.dumps({"question": q, "include_rows": True, "summarize": True}),
-                timeout=10,
+                timeout=30,
             )
         except Exception as exc:  # network or other errors
             print(f"Error: {exc}")
+            failed += 1
             continue
 
         if resp.status_code != 200:
             print(f"HTTP {resp.status_code}: {resp.text}")
+            failed += 1
             continue
 
         payload = resp.json()
@@ -132,9 +174,24 @@ def run_all():
             print(summary)
 
         rows = payload.get("rows") or []
+        row_count = len(rows)
+        print(f"Row count: {row_count}")
+        
         if rows:
             print("Rows (sample):")
             print(json.dumps(rows[:5], indent=2, default=str))
+        
+        # Check for retry tokens (indicates failure)
+        retry_token = payload.get("retry_token")
+        if retry_token:
+            print(f"RETRY TOKEN: {retry_token}")
+            print(f"RETRY REASON: {payload.get('retry_reason')}")
+            failed += 1
+        else:
+            passed += 1
+    
+    print("\n" + "=" * 80)
+    print(f"SUMMARY: {passed} passed, {failed} failed out of {len(GOLDEN)}")
 
 
 if __name__ == "__main__":

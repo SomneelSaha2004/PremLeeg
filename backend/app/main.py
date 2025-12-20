@@ -33,4 +33,11 @@ def query(req: QueryRequest):
             },
         ) from exc
 
-    return QueryResponse(sql=out.sql, columns=out.columns, rows=out.rows, summary=out.summary)
+    return QueryResponse(
+        sql=out.sql,
+        columns=out.columns,
+        rows=out.rows,
+        summary=out.summary,
+        retry_token=out.retry_token,
+        retry_reason=out.retry_reason,
+    )

@@ -6,116 +6,326 @@ from typing import Any, Dict, List, Optional
 from ..context.football_data_notes import FOOTBALL_DATA_NOTES_NON_BETTING
 
 
-def sql_generation_prompt(question: str, schema_snapshot: str, intent_hint: Optional[str] = None) -> str:
+def sql_generation_prompt(question: str, schema_snapshot: str, intent_hint: Optional[str] = None, previous_error: Optional[str] = None) -> str:
         """
-        Prompt-pack style: clear sections + constraints + examples, with a light intent hint
-        so the model picks the right table (player vs match/team).
+        View-first SQL generation with comprehensive examples and retry support.
         """
         intent_line = intent_hint or "unknown"
-        return f"""
-# Role
-You are a senior data analyst. You write correct Postgres SQL for analytics.
+        
+        error_section = ""
+        if previous_error:
+            error_section = f"""
 
-# Task
+# PREVIOUS ERROR (Fix this)
+The previous query failed with: {previous_error}
+
+COMMON FIXES:
+- "column does not exist" → check schema below, use correct column names, try a different view
+- "table does not exist" → use public.<name> prefix or check spelling
+- "Joins not allowed" → ensure only ONE relation in FROM clause
+- NULL ordering issues → add NULLS LAST to ORDER BY
+- Aggregation across seasons → use v_player_career_totals or v_player_totals_by_squad, NOT pl_player_standard_stats
+- "team/club most goals in a season" → use v_team_season_summary or pl_season_table, NOT player views
+- "returned incomplete season" → add complete-season filter (see CRITICAL PATTERNS)
+- "returned only 1 row but ties exist" → use MAX/MIN subquery pattern (see CRITICAL PATTERNS)
+"""
+        
+        return f"""
+# ROLE
+You are an expert Postgres SQL generator for Premier League analytics.
+
+# TASK
 Convert the user question into ONE Postgres SQL query.
 
-# Intent hint (use to pick the right table)
-- Detected intent: {intent_line}. If player-focused, prefer public.pl_player_standard_stats. If match/team-focused, prefer public.pl_team_match or public.pl_season_table. Only join tables if absolutely required.
+# HARD CONSTRAINTS (MUST FOLLOW)
+1. Output ONLY SQL (no markdown, no explanations, no backticks)
+2. Read-only SELECT queries only
+3. NO EXPLICIT JOINS - do NOT use JOIN keyword or comma-joins
+4. ALLOWED: subqueries, CTEs (WITH), window functions, UNION ALL, aggregates
+5. PREFER VIEWS over base tables (views are precomputed and optimized)
+6. Always include LIMIT (default 20 for rankings; higher for record queries with ties)
+7. Use NULLS LAST when ordering nullable columns
+8. Use COALESCE for nullable numeric aggregates
+9. Always schema-qualify: public.<table_or_view>
 
-# Hard constraints (must follow)
-- Output ONLY the SQL (no markdown, no explanation, no backticks).
-- Read-only only: SELECT or WITH ... SELECT.
-- Single statement only.
-- Allowed relations (one relation only; no joins):
-    - public.pl_player_standard_stats (player-season stats from FBref)
-    - public.pl_player_standard_stats_latest (latest season slice of player stats)
-    - public.v_player_career_totals (career totals per player)
-    - public.v_player_totals_by_squad (player totals grouped by squad)
-    - public.pl_matches (raw match facts)
-    - public.pl_team_match (per-team per-match rows)
-    - public.v_team_matches (per-team per-match with cards)
-    - public.v_team_season_summary (per-team per-season aggregates)
-    - public.pl_season_table (season standings)
-- No JOIN/UNION/EXCEPT/INTERSECT; use a single relation. Use the prebuilt views above instead of joining.
-- Always include LIMIT. Default to LIMIT 50 unless the user explicitly asks for more (never omit LIMIT; keep <= 200 unless user insists).
-- Use season_start for seasons. "since YEAR" -> season_start >= YEAR. If a season is named like 2018/2019, use season_start = 2018. If a vague range is given, default to season_start >= 2000. If the user omits seasons, prefer the latest season or a small recent range.
-- Avoid window functions and expensive wildcards (prefer exact filters). Avoid ILIKE '%term%'; prefer exact or prefix matches.
-- Avoid unnecessary joins; answer from one table when possible.
+# DATABASE SCHEMA (Postgres)
 
-# Player table guidance (public.pl_player_standard_stats / _latest)
-- One row per player-season; unique on (season_start, player, squad).
-- performance_* fields are season totals (e.g., performance_gls = goals, performance_ast = assists).
-- per90_* fields are per-90 rates; include a minutes floor (e.g., playing_time_min >= 900) when comparing per-90 stats.
-- Common filters: season_start, squad (team), pos, playing_time_min.
-- Safe aggregates: SUM(performance_gls) for goals, SUM(performance_ast) for assists.
-- If the user does not specify a season and wants current stats, prefer public.pl_player_standard_stats_latest.
-- For all-time totals, prefer public.v_player_career_totals (by player) or public.v_player_totals_by_squad (by player+squad).
+## BASE TABLES (use only when views lack needed columns)
+- public.pl_matches: match_id, season_start, match_date, home_team, away_team, ft_home_goals, ft_away_goals, ft_result, home_shots, away_shots, home_corners, away_corners, home_fouls, away_fouls, home_yellow, away_yellow, home_red, away_red, referee
+- public.pl_player_standard_stats: player_season_id, season_start, player, squad, pos, nation, playing_time_min, playing_time_90s, playing_time_mp, playing_time_starts, performance_gls, performance_ast, performance_g_plus_a, performance_crdy, performance_crdr, expected_xg, expected_npxg, expected_xag, per90_gls, per90_ast
 
-# Match/team guidance
-- Standings/champions/rank/points -> public.pl_season_table
-- Wins/draws/losses/points per team -> public.pl_team_match or public.v_team_season_summary
-- Per-match team stats with cards/goals/result -> public.v_team_matches
-- Raw match stats (shots, corners, cards, fouls) -> public.pl_matches
+## VIEWS (PREFER THESE - precomputed and optimized)
+- public.pl_player_standard_stats_latest: Same as pl_player_standard_stats but ONLY latest season
+- public.v_player_career_totals: player, goals, assists, minutes (ALL-TIME totals across entire dataset)
+- public.v_player_totals_by_squad: squad, player, goals, assists, minutes, pos, nation (totals per club)
+- public.pl_season_table: season_start, team, played, wins, draws, losses, gf, ga, gd, points, rank
+- public.v_team_season_summary: season_start, team, played, wins, draws, losses, goals_for, goals_against, goal_diff, points, yellows, reds
+- public.v_team_matches: season_start, match_date, team, opponent, is_home, goals_for, goals_against, yellows, reds, result (2 rows per match)
+- public.pl_team_match: match_id, season_start, team, opponent, is_home, goals_for, goals_against, result, points (2 rows per match)
+
+NOTE: There is NO attendance column anywhere. Do not reference attendance.
+
+# VIEW SELECTION RUBRIC (MUST FOLLOW)
+
+## Match Records (biggest win, highest scoring, most cards in a match):
+→ Use public.pl_matches (only table with shots, corners, fouls, match-level cards)
+- "Biggest home win" = MAX(ft_home_goals - ft_away_goals) WHERE ft_result = 'H'
+- "Biggest away win" = MAX(ft_away_goals - ft_home_goals) WHERE ft_result = 'A'
+- "Highest scoring match" = MAX(ft_home_goals + ft_away_goals)
+
+## Team Season Records (most points, most goals, fewest conceded in a season):
+→ Use public.v_team_season_summary OR public.pl_season_table
+- pl_season_table has: gf, ga, gd, points, rank
+- v_team_season_summary has: goals_for, goals_against, yellows, reds, points
+- NEVER use v_player_* views for team/club season aggregates!
+- ALWAYS apply complete-season filter (see below)
+
+## Team Discipline (cards per season):
+→ Use public.v_team_season_summary (has yellows, reds columns)
+
+## Winning/Losing Streaks:
+→ Use public.v_team_matches with window functions (see STREAK PATTERN below)
+
+## Unbeaten Streaks:
+→ Use public.v_team_matches with window functions (see UNBEATEN STREAK PATTERN below)
+
+## Player Single-Season Records (most goals in one season):
+→ Use public.pl_player_standard_stats with season_start filter
+- "Current season" / "this season" → use pl_player_standard_stats_latest
+
+## Player Career/All-Time Records:
+→ Use public.v_player_career_totals
+
+## Player Records for a Specific Club:
+→ Use public.v_player_totals_by_squad
+
+# CRITICAL PATTERNS (MUST USE)
+
+## PATTERN A: TIE-SAFE RECORD QUERIES
+For "biggest", "most", "record", "best", "worst" questions, return ALL tied rows:
+```sql
+SELECT ...
+FROM public.<view>
+WHERE <metric> = (SELECT MAX(<metric>) FROM public.<view>)
+ORDER BY ... NULLS LAST
+LIMIT 20
+```
+For MIN records (fewest, least, worst):
+```sql
+SELECT ...
+FROM public.<view>
+WHERE <metric> = (SELECT MIN(<metric>) FROM public.<view>)
+ORDER BY ... NULLS LAST
+LIMIT 20
+```
+
+## PATTERN B: COMPLETE-SEASON FILTER
+PL had both 42-game (1992-1994) and 38-game seasons. Filter for complete seasons:
+```sql
+SELECT s.*
+FROM public.v_team_season_summary s
+WHERE s.played = (
+    SELECT MAX(s2.played)
+    FROM public.v_team_season_summary s2
+    WHERE s2.season_start = s.season_start
+)
+ORDER BY ... NULLS LAST
+```
+
+## PATTERN C: WINNING STREAK (consecutive wins)
+Use window functions to compute streak groups:
+```sql
+WITH ordered AS (
+    SELECT team, match_date, result,
+           SUM(CASE WHEN result != 'W' THEN 1 ELSE 0 END) 
+               OVER (PARTITION BY team ORDER BY match_date) AS grp
+    FROM public.v_team_matches
+),
+streaks AS (
+    SELECT team, grp, COUNT(*) AS streak_len,
+           MIN(match_date) AS streak_start, MAX(match_date) AS streak_end
+    FROM ordered
+    WHERE result = 'W'
+    GROUP BY team, grp
+)
+SELECT team, streak_len, streak_start, streak_end
+FROM streaks
+WHERE streak_len = (SELECT MAX(streak_len) FROM streaks)
+ORDER BY streak_start
+LIMIT 20
+```
+
+## PATTERN D: UNBEATEN STREAK (consecutive non-losses)
+```sql
+WITH ordered AS (
+    SELECT team, match_date, result,
+           SUM(CASE WHEN result = 'L' THEN 1 ELSE 0 END) 
+               OVER (PARTITION BY team ORDER BY match_date) AS grp
+    FROM public.v_team_matches
+),
+streaks AS (
+    SELECT team, grp, COUNT(*) AS streak_len,
+           MIN(match_date) AS streak_start, MAX(match_date) AS streak_end
+    FROM ordered
+    WHERE result != 'L'
+    GROUP BY team, grp
+)
+SELECT team, streak_len, streak_start, streak_end
+FROM streaks
+WHERE streak_len = (SELECT MAX(streak_len) FROM streaks)
+ORDER BY streak_start
+LIMIT 20
+```
 
 # Column reference (non-betting only)
 {FOOTBALL_DATA_NOTES_NON_BETTING}
 
-# Database schema
+# Database schema & Glossary
 {schema_snapshot}
 
-# Examples (pattern only — adapt to question)
-Example 1:
-Question: Top 5 teams by total wins since 2000
-SQL:
-SELECT team, COUNT(*) AS wins
-FROM public.pl_team_match
-WHERE season_start >= 2000 AND result = 'W'
-GROUP BY team
-ORDER BY wins DESC
-LIMIT 5
+# EXAMPLES
 
-Example 2:
-Question: Champions by season since 2010
-SQL:
-SELECT season_start, team
+## Ex1: Biggest home win ever (TIE-SAFE)
+SELECT match_date, home_team, away_team, ft_home_goals, ft_away_goals,
+       (ft_home_goals - ft_away_goals) AS margin
+FROM public.pl_matches
+WHERE ft_result = 'H'
+  AND (ft_home_goals - ft_away_goals) = (
+      SELECT MAX(ft_home_goals - ft_away_goals)
+      FROM public.pl_matches
+      WHERE ft_result = 'H'
+  )
+ORDER BY match_date
+LIMIT 20
+
+## Ex2: Biggest away win ever (TIE-SAFE)
+SELECT match_date, home_team, away_team, ft_home_goals, ft_away_goals,
+       (ft_away_goals - ft_home_goals) AS margin
+FROM public.pl_matches
+WHERE ft_result = 'A'
+  AND (ft_away_goals - ft_home_goals) = (
+      SELECT MAX(ft_away_goals - ft_home_goals)
+      FROM public.pl_matches
+      WHERE ft_result = 'A'
+  )
+ORDER BY match_date
+LIMIT 20
+
+## Ex3: Team with most goals in a single season (COMPLETE-SEASON + TIE-SAFE)
+SELECT s.team, s.season_start, s.goals_for
+FROM public.v_team_season_summary s
+WHERE s.played = (
+    SELECT MAX(s2.played)
+    FROM public.v_team_season_summary s2
+    WHERE s2.season_start = s.season_start
+)
+AND s.goals_for = (
+    SELECT MAX(s3.goals_for)
+    FROM public.v_team_season_summary s3
+    WHERE s3.played = (
+        SELECT MAX(s4.played)
+        FROM public.v_team_season_summary s4
+        WHERE s4.season_start = s3.season_start
+    )
+)
+ORDER BY s.season_start
+LIMIT 20
+
+## Ex4: Fewest goals conceded in a season (COMPLETE-SEASON + TIE-SAFE)
+SELECT s.team, s.season_start, s.goals_against
+FROM public.v_team_season_summary s
+WHERE s.played = (
+    SELECT MAX(s2.played)
+    FROM public.v_team_season_summary s2
+    WHERE s2.season_start = s.season_start
+)
+AND s.goals_against = (
+    SELECT MIN(s3.goals_against)
+    FROM public.v_team_season_summary s3
+    WHERE s3.played = (
+        SELECT MAX(s4.played)
+        FROM public.v_team_season_summary s4
+        WHERE s4.season_start = s3.season_start
+    )
+)
+ORDER BY s.season_start
+LIMIT 20
+
+## Ex5: All-time Premier League top scorers
+SELECT player, goals, assists, minutes
+FROM public.v_player_career_totals
+ORDER BY goals DESC NULLS LAST
+LIMIT 20
+
+## Ex6: Liverpool's all-time top scorer
+SELECT player, goals, assists, minutes
+FROM public.v_player_totals_by_squad
+WHERE squad = 'Liverpool'
+ORDER BY goals DESC NULLS LAST
+LIMIT 1
+
+## Ex7: Most goals by a player in a single season (TIE-SAFE)
+SELECT player, squad, season_start, performance_gls AS goals
+FROM public.pl_player_standard_stats
+WHERE performance_gls = (
+    SELECT MAX(performance_gls)
+    FROM public.pl_player_standard_stats
+)
+ORDER BY season_start
+LIMIT 20
+
+## Ex8: Most yellow cards by a team in a season (COMPLETE-SEASON + TIE-SAFE)
+SELECT s.team, s.season_start, s.yellows
+FROM public.v_team_season_summary s
+WHERE s.played = (
+    SELECT MAX(s2.played)
+    FROM public.v_team_season_summary s2
+    WHERE s2.season_start = s.season_start
+)
+AND s.yellows = (
+    SELECT MAX(s3.yellows)
+    FROM public.v_team_season_summary s3
+    WHERE s3.played = (
+        SELECT MAX(s4.played)
+        FROM public.v_team_season_summary s4
+        WHERE s4.season_start = s3.season_start
+    )
+)
+ORDER BY s.season_start
+LIMIT 20
+
+## Ex9: Highest scoring match ever (TIE-SAFE)
+SELECT match_date, home_team, away_team, ft_home_goals, ft_away_goals,
+       (ft_home_goals + ft_away_goals) AS total_goals
+FROM public.pl_matches
+WHERE (ft_home_goals + ft_away_goals) = (
+    SELECT MAX(ft_home_goals + ft_away_goals)
+    FROM public.pl_matches
+)
+ORDER BY match_date
+LIMIT 20
+
+## Ex10: Premier League champions since 2010
+SELECT season_start, team, points
 FROM public.pl_season_table
 WHERE season_start >= 2010 AND rank = 1
 ORDER BY season_start
-LIMIT 50
-
-Example 3:
-Question: Who has the most goals in 2018/2019?
-SQL:
-SELECT player, squad, performance_gls AS goals
-FROM public.pl_player_standard_stats
-WHERE season_start = 2018
-ORDER BY goals DESC
-LIMIT 10
-
-Example 4:
-Question: Best per-90 goal scorers since 2010 (min 900 minutes)
-SQL:
-SELECT player, squad, season_start, per90_gls, playing_time_min
-FROM public.pl_player_standard_stats
-WHERE season_start >= 2010 AND playing_time_min >= 900
-ORDER BY per90_gls DESC
 LIMIT 20
 
-Example 5:
-Question: Latest season top assists (no season provided)
-SQL:
-SELECT player, squad, performance_ast AS assists
-FROM public.pl_player_standard_stats
-WHERE season_start = (SELECT MAX(season_start) FROM public.pl_player_standard_stats)
-ORDER BY assists DESC
-LIMIT 10
+{error_section}
 
 # Self-check before final output
 Confirm your SQL:
-- uses allowed relations only
-- includes LIMIT
-- is valid Postgres
-- answers the question precisely
+- Uses allowed relations only
+- Uses correct view for the question type (team vs player, season vs career)
+- For team season records: uses v_team_season_summary or pl_season_table (NOT player views)
+- For record queries: returns ALL ties with MAX/MIN subquery pattern
+- For season records: applies complete-season filter
+- For streaks: uses window function pattern
+- Includes LIMIT
+- Is valid Postgres
+- Uses NULLS LAST in ORDER BY when ordering by nullable columns
+- Does NOT reference non-existent columns (e.g., attendance)
 
 # User question
 {question}
@@ -147,18 +357,19 @@ def answer_synthesis_prompt(
 
     return f"""
 # Role
-You are a careful data analyst.
+You are a helpful and precise data analyst for the Premier League.
 
 # Task
 Answer the user's question using ONLY the SQL results provided.
 
 # Rules (must follow)
-- Use only the provided rows/columns. If no rows, say no data returned.
-- Do NOT invent numbers, teams, or seasons not present.
-- If results may be truncated, avoid global claims unless the SQL guarantees top results.
-- Always mention the season scope and the metric used (e.g., goals, assists, xG, per-90).
-- If relevant, include a short top-N rundown (player/team, season, metric value) using the returned ordering.
-- Be concise: 2–6 sentences.
+- Use only the provided rows/columns. If no rows, say "No data found matching your criteria."
+- Do NOT invent numbers, teams, or seasons not present in the data.
+- If results are truncated (returned_row_count > max_rows_sent), mention that these are the top results.
+- Always mention the season scope (e.g., "In the 2023/24 season...") and the metric used.
+- Provide a direct answer first, then supporting details (e.g., "The top scorer was Erling Haaland with 36 goals.").
+- If the SQL query seems to have failed to answer the specific nuance of the question (e.g., asked for "all time" but SQL only checked one season), mention this limitation politely.
+- Be concise but conversational.
 
 # Helpful column meanings (non-betting only)
 {FOOTBALL_DATA_NOTES_NON_BETTING}
