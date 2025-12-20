@@ -125,6 +125,8 @@ class PipelineOutput:
     summary: str
     retry_token: Optional[str] = None
     retry_reason: Optional[str] = None
+    attempt_count: int = 0
+    trace: Optional[List[Dict[str, Any]]] = None
 
 
 class AgentPipeline:
@@ -150,8 +152,11 @@ class AgentPipeline:
         raw_sql = ""
         validated_sql = ""
         warning: Optional[str] = None
+
+        trace: List[Dict[str, Any]] = []
         
         for attempt in range(max_retries + 1):
+            attempt_num = attempt + 1
             try:
                 # Build hints for the LLM
                 hints = []
@@ -194,6 +199,18 @@ class AgentPipeline:
                 # trigger a retry with the warning as feedback
                 if warning and attempt == 0:
                     last_error = warning
+                    trace.append(
+                        {
+                            "attempt": attempt_num,
+                            "raw_sql": raw_sql,
+                            "validated_sql": validated_sql,
+                            "warning": warning,
+                            "error": None,
+                            "row_count": None,
+                            "outcome": "retry",
+                            "retry_reason": warning,
+                        }
+                    )
                     continue
                 
                 # Execute
@@ -204,6 +221,18 @@ class AgentPipeline:
                     last_error = (
                         "Query returned 0 rows. This may indicate wrong table/view choice or "
                         "overly restrictive filters. Try a different approach."
+                    )
+                    trace.append(
+                        {
+                            "attempt": attempt_num,
+                            "raw_sql": raw_sql,
+                            "validated_sql": validated_sql,
+                            "warning": warning,
+                            "error": None,
+                            "row_count": result.row_count,
+                            "outcome": "retry",
+                            "retry_reason": last_error,
+                        }
                     )
                     continue
                 
@@ -224,16 +253,43 @@ class AgentPipeline:
                         max_rows_sent=20,
                     )
                     summary = self.llm.generate_text(synthesis_prompt).text
+
+                trace.append(
+                    {
+                        "attempt": attempt_num,
+                        "raw_sql": raw_sql,
+                        "validated_sql": validated_sql,
+                        "warning": warning,
+                        "error": None,
+                        "row_count": result.row_count,
+                        "outcome": "success",
+                        "retry_reason": None,
+                    }
+                )
                 
                 return PipelineOutput(
                     sql=validated_sql,
                     columns=result.columns,
                     rows=result.rows if include_rows else [],
                     summary=summary,
+                    attempt_count=attempt_num,
+                    trace=trace,
                 )
                 
             except SQLValidationError as e:
                 last_error = f"Validation error: {str(e)}"
+                trace.append(
+                    {
+                        "attempt": attempt_num,
+                        "raw_sql": raw_sql,
+                        "validated_sql": validated_sql or None,
+                        "warning": warning,
+                        "error": last_error,
+                        "row_count": None,
+                        "outcome": "error" if attempt >= max_retries else "retry",
+                        "retry_reason": last_error if attempt < max_retries else None,
+                    }
+                )
                 if attempt < max_retries:
                     continue
                 if raise_on_error:
@@ -245,10 +301,24 @@ class AgentPipeline:
                     summary=f"Failed after {max_retries + 1} attempts. {last_error}",
                     retry_token=RETRY_TOKEN,
                     retry_reason=last_error,
+                    attempt_count=attempt_num,
+                    trace=trace,
                 )
                 
             except Exception as e:
                 last_error = f"Execution error: {str(e)}"
+                trace.append(
+                    {
+                        "attempt": attempt_num,
+                        "raw_sql": raw_sql,
+                        "validated_sql": validated_sql or None,
+                        "warning": warning,
+                        "error": last_error,
+                        "row_count": None,
+                        "outcome": "error" if attempt >= max_retries else "retry",
+                        "retry_reason": last_error if attempt < max_retries else None,
+                    }
+                )
                 if attempt < max_retries:
                     continue
                 if raise_on_error:
@@ -260,6 +330,8 @@ class AgentPipeline:
                     summary=f"Failed after {max_retries + 1} attempts. {last_error}",
                     retry_token=RETRY_TOKEN,
                     retry_reason=last_error,
+                    attempt_count=attempt_num,
+                    trace=trace,
                 )
         
         # Should never reach here, but just in case
@@ -270,4 +342,6 @@ class AgentPipeline:
             summary="Unknown error in pipeline.",
             retry_token=RETRY_TOKEN,
             retry_reason="Max retries exceeded",
+            attempt_count=max_retries + 1,
+            trace=trace,
         )
