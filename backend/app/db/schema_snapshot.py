@@ -16,6 +16,14 @@ ALLOWED_RELATIONS = [
     ("public", "v_player_totals_by_squad"),
     ("public", "v_team_matches"),
     ("public", "v_team_season_summary"),
+    # Precomputed streak views (MUST use these for streak questions)
+    ("public", "v_team_win_streaks"),
+    ("public", "v_team_unbeaten_streaks"),
+    ("public", "v_team_unbeaten_streaks_season"),
+    ("public", "v_team_clean_sheet_streaks"),
+    ("public", "v_team_clean_sheet_streaks_season"),
+    ("public", "v_team_scoring_streaks"),
+    ("public", "v_team_scoring_streaks_season"),
 ]
 
 
@@ -116,12 +124,48 @@ def build_schema_snapshot() -> SchemaSnapshot:
     lines.append("   - Use for: Club legends, 'top scorer for [club]', player-club records.")
 
     lines.append("")
+    lines.append("=== STREAK VIEWS (PRECOMPUTED - MUST USE FOR STREAK QUESTIONS) ===")
+    
+    lines.append("10) public.v_team_win_streaks (VIEW)")
+    lines.append("   - Precomputed consecutive wins (all-time).")
+    lines.append("   - Columns: team, streak_start, streak_end, win_streak.")
+    lines.append("   - Use for: 'longest winning streak', 'most consecutive wins'.")
+
+    lines.append("11) public.v_team_unbeaten_streaks (VIEW)")
+    lines.append("   - Precomputed consecutive matches without loss (all-time).")
+    lines.append("   - Columns: team, streak_start, streak_end, games, wins, draws.")
+    lines.append("   - Use for: 'longest unbeaten run', 'invincibles streak'.")
+
+    lines.append("12) public.v_team_unbeaten_streaks_season (VIEW)")
+    lines.append("   - Unbeaten streaks scoped to a single season.")
+    lines.append("   - Columns: team, season_start, streak_start, streak_end, games, wins, draws.")
+    lines.append("   - Use for: 'longest unbeaten run in a season', 'best unbeaten run in 2019/20'.")
+
+    lines.append("13) public.v_team_clean_sheet_streaks (VIEW)")
+    lines.append("   - Precomputed consecutive clean sheets (all-time).")
+    lines.append("   - Columns: team, streak_start, streak_end, games.")
+    lines.append("   - Use for: 'most consecutive clean sheets', 'longest without conceding'.")
+
+    lines.append("14) public.v_team_clean_sheet_streaks_season (VIEW)")
+    lines.append("   - Clean sheet streaks scoped to a single season.")
+    lines.append("   - Columns: team, season_start, streak_start, streak_end, games.")
+
+    lines.append("15) public.v_team_scoring_streaks (VIEW)")
+    lines.append("   - Precomputed consecutive games with a goal scored (all-time).")
+    lines.append("   - Columns: team, streak_start, streak_end, games.")
+    lines.append("   - Use for: 'longest scoring streak', 'consecutive games scored'.")
+
+    lines.append("16) public.v_team_scoring_streaks_season (VIEW)")
+    lines.append("   - Scoring streaks scoped to a single season.")
+    lines.append("   - Columns: team, season_start, streak_start, streak_end, games.")
+
+    lines.append("")
     lines.append("CRITICAL RULES:")
     lines.append("- PREFER VIEWS over base tables (precomputed, faster).")
     lines.append("- For 'all-time' player stats → v_player_career_totals")
     lines.append("- For 'club record' player stats → v_player_totals_by_squad")
     lines.append("- For team season aggregates (goals, points, cards) → v_team_season_summary or pl_season_table")
-    lines.append("- For streaks (winning, unbeaten) → v_team_matches with window functions")
+    lines.append("- For STREAK questions → MUST use streak views (v_team_*_streaks), do NOT compute from match data!")
     lines.append("- NEVER use player views for team/club season records!")
     lines.append("- For record queries (most, fewest, biggest), return ALL ties using WHERE metric = (SELECT MAX/MIN ...)")
     lines.append("- For season records, filter to complete seasons only")

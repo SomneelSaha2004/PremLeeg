@@ -63,7 +63,33 @@ Convert the user question into ONE Postgres SQL query.
 - public.v_team_matches: season_start, match_date, team, opponent, is_home, goals_for, goals_against, yellows, reds, result (2 rows per match)
 - public.pl_team_match: match_id, season_start, team, opponent, is_home, goals_for, goals_against, result, points (2 rows per match)
 
+## STREAK VIEWS (PRECOMPUTED - MUST USE FOR STREAK QUESTIONS)
+- public.v_team_win_streaks: team, streak_start, streak_end, win_streak (consecutive wins, all-time)
+- public.v_team_unbeaten_streaks: team, streak_start, streak_end, games, wins, draws (unbeaten runs, all-time)
+- public.v_team_unbeaten_streaks_season: team, season_start, streak_start, streak_end, games, wins, draws (unbeaten runs per season)
+- public.v_team_clean_sheet_streaks: team, streak_start, streak_end, games (consecutive clean sheets, all-time)
+- public.v_team_clean_sheet_streaks_season: team, season_start, streak_start, streak_end, games (clean sheets per season)
+- public.v_team_scoring_streaks: team, streak_start, streak_end, games (consecutive games with a goal, all-time)
+- public.v_team_scoring_streaks_season: team, season_start, streak_start, streak_end, games (scoring streaks per season)
+
 NOTE: There is NO attendance column anywhere. Do not reference attendance.
+
+## VALID TEAM NAMES (use EXACTLY as shown, case-sensitive)
+Arsenal, Aston Villa, Barnsley, Birmingham, Blackburn, Blackpool, Bolton, Bournemouth,
+Bradford, Brentford, Brighton, Burnley, Cardiff, Charlton, Chelsea, Coventry, Crystal Palace,
+Derby, Everton, Fulham, Huddersfield, Hull, Ipswich, Leeds, Leicester, Liverpool, Luton,
+Man City, Man United, Middlesbrough, Newcastle, Norwich, Nott'm Forest, Oldham, Portsmouth,
+QPR, Reading, Sheffield United, Sheffield Weds, Southampton, Stoke, Sunderland, Swansea,
+Swindon, Tottenham, Watford, West Brom, West Ham, Wigan, Wimbledon, Wolves
+
+Common name mappings (use the DB name on the right):
+- "Manchester City" → 'Man City'
+- "Manchester United" / "Man Utd" → 'Man United'
+- "Nottingham Forest" → 'Nott''m Forest'
+- "Sheffield Wednesday" → 'Sheffield Weds'
+- "West Bromwich Albion" → 'West Brom'
+- "Tottenham Hotspur" / "Spurs" → 'Tottenham'
+- "Queens Park Rangers" → 'QPR'
 
 # VIEW SELECTION RUBRIC (MUST FOLLOW)
 
@@ -83,11 +109,21 @@ NOTE: There is NO attendance column anywhere. Do not reference attendance.
 ## Team Discipline (cards per season):
 → Use public.v_team_season_summary (has yellows, reds columns)
 
-## Winning/Losing Streaks:
-→ Use public.v_team_matches with window functions (see STREAK PATTERN below)
+## STREAK POLICY (CRITICAL - USE PRECOMPUTED VIEWS)
+For streak-related questions, you MUST use the precomputed streak views.
+Do NOT attempt to compute streaks from pl_matches, pl_team_match, or v_team_matches.
 
-## Unbeaten Streaks:
-→ Use public.v_team_matches with window functions (see UNBEATEN STREAK PATTERN below)
+Streak Intent → Preferred View:
+- "winning streak" / "consecutive wins" / "wins in a row" → public.v_team_win_streaks
+- "unbeaten" / "invincible" / "without losing" → public.v_team_unbeaten_streaks
+- "clean sheets" / "not conceding" / "shutouts" → public.v_team_clean_sheet_streaks
+- "scoring streak" / "games scored in" → public.v_team_scoring_streaks
+
+Season-scoped questions (add "_season" suffix):
+- "in a season" / "single season" / "2019/20" → use *_season variant (e.g., v_team_unbeaten_streaks_season)
+
+All-time questions:
+- "ever" / "all-time" / "in history" → use base streak view (e.g., v_team_unbeaten_streaks)
 
 ## Player Single-Season Records (most goals in one season):
 → Use public.pl_player_standard_stats with season_start filter
@@ -132,49 +168,52 @@ WHERE s.played = (
 ORDER BY ... NULLS LAST
 ```
 
-## PATTERN C: WINNING STREAK (consecutive wins)
-Use window functions to compute streak groups:
+## PATTERN C: STREAK QUERIES (USE PRECOMPUTED VIEWS)
+For streaks, ALWAYS use the precomputed streak views. Never compute streaks manually.
+
+Longest winning streak ever:
 ```sql
-WITH ordered AS (
-    SELECT team, match_date, result,
-           SUM(CASE WHEN result != 'W' THEN 1 ELSE 0 END) 
-               OVER (PARTITION BY team ORDER BY match_date) AS grp
-    FROM public.v_team_matches
-),
-streaks AS (
-    SELECT team, grp, COUNT(*) AS streak_len,
-           MIN(match_date) AS streak_start, MAX(match_date) AS streak_end
-    FROM ordered
-    WHERE result = 'W'
-    GROUP BY team, grp
-)
-SELECT team, streak_len, streak_start, streak_end
-FROM streaks
-WHERE streak_len = (SELECT MAX(streak_len) FROM streaks)
+SELECT team, win_streak, streak_start, streak_end
+FROM public.v_team_win_streaks
+WHERE win_streak = (SELECT MAX(win_streak) FROM public.v_team_win_streaks)
 ORDER BY streak_start
 LIMIT 20
 ```
 
-## PATTERN D: UNBEATEN STREAK (consecutive non-losses)
+Longest unbeaten run ever:
 ```sql
-WITH ordered AS (
-    SELECT team, match_date, result,
-           SUM(CASE WHEN result = 'L' THEN 1 ELSE 0 END) 
-               OVER (PARTITION BY team ORDER BY match_date) AS grp
-    FROM public.v_team_matches
-),
-streaks AS (
-    SELECT team, grp, COUNT(*) AS streak_len,
-           MIN(match_date) AS streak_start, MAX(match_date) AS streak_end
-    FROM ordered
-    WHERE result != 'L'
-    GROUP BY team, grp
-)
-SELECT team, streak_len, streak_start, streak_end
-FROM streaks
-WHERE streak_len = (SELECT MAX(streak_len) FROM streaks)
+SELECT team, games, wins, draws, streak_start, streak_end
+FROM public.v_team_unbeaten_streaks
+WHERE games = (SELECT MAX(games) FROM public.v_team_unbeaten_streaks)
 ORDER BY streak_start
 LIMIT 20
+```
+
+Longest clean sheet streak ever:
+```sql
+SELECT team, games, streak_start, streak_end
+FROM public.v_team_clean_sheet_streaks
+WHERE games = (SELECT MAX(games) FROM public.v_team_clean_sheet_streaks)
+ORDER BY streak_start
+LIMIT 20
+```
+
+Longest scoring streak in a season:
+```sql
+SELECT team, season_start, games, streak_start, streak_end
+FROM public.v_team_scoring_streaks_season
+WHERE games = (SELECT MAX(games) FROM public.v_team_scoring_streaks_season)
+ORDER BY streak_start
+LIMIT 20
+```
+
+Longest winning streak for a specific team:
+```sql
+SELECT team, win_streak, streak_start, streak_end
+FROM public.v_team_win_streaks
+WHERE team ILIKE '%Arsenal%'
+ORDER BY win_streak DESC
+LIMIT 10
 ```
 
 # Column reference (non-betting only)
@@ -321,7 +360,7 @@ Confirm your SQL:
 - For team season records: uses v_team_season_summary or pl_season_table (NOT player views)
 - For record queries: returns ALL ties with MAX/MIN subquery pattern
 - For season records: applies complete-season filter
-- For streaks: uses window function pattern
+- For STREAKS: uses precomputed streak views (v_team_*_streaks), NOT manual computation
 - Includes LIMIT
 - Is valid Postgres
 - Uses NULLS LAST in ORDER BY when ordering by nullable columns

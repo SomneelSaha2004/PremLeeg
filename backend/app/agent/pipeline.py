@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from .prompts import sql_generation_prompt, answer_synthesis_prompt
-from .validate_sql import SQLValidationError, validate_and_patch_sql
+from .validate_sql import SQLValidationError, validate_and_patch_sql, detect_streak_intent
 from ..db.client import PostgresClient, QueryResult
 from ..db.schema_snapshot import build_schema_snapshot
+from ..context.team_names import get_team_filter_hint
 from ..llm import OpenAILLM
 
 
@@ -73,8 +74,9 @@ RECORD_KEYWORDS = {
     "history",
 }
 
-# Retry token for orchestrator
+# Retry tokens for orchestrator
 RETRY_TOKEN = "__RETRY_SQL__"
+RETRY_WITH_ERROR_TOKEN = "__RETRY_WITH_ERROR_CONTEXT__"
 
 
 def classify_intent(question: str) -> str:
@@ -91,6 +93,28 @@ def is_record_question(question: str) -> bool:
     """Check if question is asking for a record/superlative."""
     q = question.lower()
     return any(kw in q for kw in RECORD_KEYWORDS)
+
+
+def get_streak_hint(question: str) -> Optional[str]:
+    """
+    Detect streak-related intent and return a hint for the LLM.
+    Returns a string explaining which streak view to use, or None.
+    """
+    recommended_view = detect_streak_intent(question)
+    if not recommended_view:
+        return None
+    
+    # Build a specific hint based on the recommended view
+    view_descriptions = {
+        "v_team_win_streaks": "Use v_team_win_streaks for consecutive wins (all-time streaks).",
+        "v_team_unbeaten_streaks": "Use v_team_unbeaten_streaks for unbeaten runs (all-time).",
+        "v_team_unbeaten_streaks_season": "Use v_team_unbeaten_streaks_season for unbeaten runs within a single season.",
+        "v_team_clean_sheet_streaks": "Use v_team_clean_sheet_streaks for consecutive clean sheets (all-time).",
+        "v_team_clean_sheet_streaks_season": "Use v_team_clean_sheet_streaks_season for clean sheet streaks within a single season.",
+        "v_team_scoring_streaks": "Use v_team_scoring_streaks for consecutive matches scoring (all-time).",
+        "v_team_scoring_streaks_season": "Use v_team_scoring_streaks_season for scoring streaks within a single season.",
+    }
+    return view_descriptions.get(recommended_view, f"Use {recommended_view} for this streak question.")
 
 
 @dataclass
@@ -118,6 +142,8 @@ class AgentPipeline:
         schema = build_schema_snapshot()
         intent = classify_intent(question)
         is_record = is_record_question(question)
+        streak_hint = get_streak_hint(question)
+        team_hint = get_team_filter_hint(question)
         
         max_retries = 2  # Increased from 1 to allow more retry attempts
         last_error = None
@@ -127,10 +153,22 @@ class AgentPipeline:
         
         for attempt in range(max_retries + 1):
             try:
+                # Build hints for the LLM
+                hints = []
+                if streak_hint:
+                    hints.append(streak_hint)
+                if team_hint:
+                    hints.append(team_hint)
+                
                 # Build error context for retries
                 error_context = last_error
                 if warning and attempt > 0:
                     error_context = f"{last_error or ''}\nWarning: {warning}"
+                
+                # On first attempt, include hints as guidance
+                if hints and attempt == 0:
+                    hint_text = "\n".join(hints)
+                    error_context = hint_text if not error_context else f"{hint_text}\n{error_context}"
                 
                 # Generate SQL with error context if retrying
                 prompt = sql_generation_prompt(

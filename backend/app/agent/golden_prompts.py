@@ -85,16 +85,36 @@ GOLDEN: List[Dict[str, str]] = [
         "tests": "TIE-SAFE + v_team_season_summary.reds",
     },
     
-    # === STREAK QUESTIONS (test window function patterns) ===
+    # === STREAK QUESTIONS (test precomputed streak views) ===
     {
         "question": "What is the longest winning streak by a team in the Premier League?",
         "expected": "18 consecutive wins by Manchester City (Aug-Dec 2017) and Liverpool (Oct 2019-Feb 2020).",
-        "tests": "WINNING STREAK pattern with window functions",
+        "tests": "Must use v_team_win_streaks (precomputed), NOT manual window functions",
     },
     {
         "question": "Which team went the longest unbeaten in Premier League history?",
         "expected": "49 games unbeaten by Arsenal (May 2003-Oct 2004).",
-        "tests": "UNBEATEN STREAK pattern with window functions",
+        "tests": "Must use v_team_unbeaten_streaks (precomputed), NOT manual window functions",
+    },
+    {
+        "question": "What is the longest unbeaten run in a single Premier League season?",
+        "expected": "38 matches by Arsenal (2003/04 Invincibles season).",
+        "tests": "Must use v_team_unbeaten_streaks_season for season-specific streaks",
+    },
+    {
+        "question": "What is the longest clean sheet streak in Premier League history?",
+        "expected": "Petr Cech/Chelsea kept 10 consecutive clean sheets (2004/05). Should use v_team_clean_sheet_streaks.",
+        "tests": "Must use v_team_clean_sheet_streaks (precomputed)",
+    },
+    {
+        "question": "Which team had the longest scoring streak in a single Premier League season?",
+        "expected": "Should show consecutive matches where a team scored at least one goal.",
+        "tests": "Must use v_team_scoring_streaks_season for season-specific scoring streaks",
+    },
+    {
+        "question": "What is Arsenal's longest winning streak in the Premier League?",
+        "expected": "14 consecutive wins by Arsenal.",
+        "tests": "Must use v_team_win_streaks with team filter, NOT manual computation",
     },
     
     # === PLAYER SINGLE-SEASON RECORDS (test correct view + ties) ===

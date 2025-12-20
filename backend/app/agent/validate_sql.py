@@ -29,6 +29,14 @@ ALLOWED_TABLES: Set[str] = {
     "v_player_totals_by_squad",
     "v_team_matches",
     "v_team_season_summary",
+    # Streak views (precomputed - prefer these for streak questions)
+    "v_team_win_streaks",
+    "v_team_unbeaten_streaks",
+    "v_team_unbeaten_streaks_season",
+    "v_team_clean_sheet_streaks",
+    "v_team_clean_sheet_streaks_season",
+    "v_team_scoring_streaks",
+    "v_team_scoring_streaks_season",
 }
 
 # Views that are PLAYER-focused (should NOT be used for team/club season aggregates)
@@ -45,6 +53,45 @@ TEAM_VIEWS: Set[str] = {
     "v_team_season_summary",
     "v_team_matches",
     "pl_team_match",
+}
+
+# Precomputed streak views (MUST use these for streak questions)
+STREAK_VIEWS: Set[str] = {
+    "v_team_win_streaks",
+    "v_team_unbeaten_streaks",
+    "v_team_unbeaten_streaks_season",
+    "v_team_clean_sheet_streaks",
+    "v_team_clean_sheet_streaks_season",
+    "v_team_scoring_streaks",
+    "v_team_scoring_streaks_season",
+}
+
+# Streak intent keywords and their preferred views
+STREAK_INTENT_MAP: Dict[str, str] = {
+    # Win streak keywords
+    "winning streak": "v_team_win_streaks",
+    "win streak": "v_team_win_streaks",
+    "consecutive wins": "v_team_win_streaks",
+    "wins in a row": "v_team_win_streaks",
+    "longest win": "v_team_win_streaks",
+    # Unbeaten streak keywords
+    "unbeaten": "v_team_unbeaten_streaks",
+    "invincible": "v_team_unbeaten_streaks",
+    "without losing": "v_team_unbeaten_streaks",
+    "undefeated": "v_team_unbeaten_streaks",
+    "not lost": "v_team_unbeaten_streaks",
+    # Clean sheet streak keywords
+    "clean sheet": "v_team_clean_sheet_streaks",
+    "clean sheets": "v_team_clean_sheet_streaks",
+    "not conceding": "v_team_clean_sheet_streaks",
+    "without conceding": "v_team_clean_sheet_streaks",
+    "shutout": "v_team_clean_sheet_streaks",
+    "shutouts": "v_team_clean_sheet_streaks",
+    # Scoring streak keywords
+    "scoring streak": "v_team_scoring_streaks",
+    "consecutive games scored": "v_team_scoring_streaks",
+    "games scored in": "v_team_scoring_streaks",
+    "scoring run": "v_team_scoring_streaks",
 }
 
 # Keywords that indicate team/club season aggregate questions
@@ -237,6 +284,33 @@ def _ensure_allowed_columns(sql: str, allowed_columns: Optional[Dict[str, Set[st
             )
 
 
+def detect_streak_intent(question: str) -> Optional[str]:
+    """
+    Detect if question is about streaks and return the preferred view.
+    Returns the recommended streak view name, or None if not a streak question.
+    """
+    if not question:
+        return None
+    
+    q_lower = question.lower()
+    
+    # Check for streak keywords and find the best matching view
+    for keyword, view in STREAK_INTENT_MAP.items():
+        if keyword in q_lower:
+            # Check if season-scoped version is needed
+            needs_season_scope = any(term in q_lower for term in [
+                "in a season", "single season", "one season",
+                "season_start", "2019", "2020", "2021", "2022", "2023", "2024", "2025",
+                "/20", "/21", "/22", "/23", "/24", "/25",
+            ])
+            
+            if needs_season_scope and f"{view}_season" in STREAK_VIEWS:
+                return f"{view}_season"
+            return view
+    
+    return None
+
+
 def _detect_intent_mismatch(sql: str, question: Optional[str]) -> Optional[str]:
     """
     Detect if the SQL uses wrong views for the question intent.
@@ -248,6 +322,19 @@ def _detect_intent_mismatch(sql: str, question: Optional[str]) -> Optional[str]:
     q_lower = question.lower()
     parsed = sqlglot.parse_one(sql, read="postgres")
     tables = {t.name for t in parsed.find_all(exp.Table)}
+    
+    # Check for streak intent mismatch
+    streak_view = detect_streak_intent(question)
+    if streak_view:
+        uses_streak_view = any(t in STREAK_VIEWS for t in tables)
+        uses_raw_match_tables = any(t in {"pl_matches", "pl_team_match", "v_team_matches"} for t in tables)
+        
+        if uses_raw_match_tables and not uses_streak_view:
+            return (
+                f"Streak intent mismatch: Question appears to be about streaks. "
+                f"Use the precomputed streak view public.{streak_view} instead of computing from match data. "
+                f"Do NOT compute streaks manually from pl_matches or v_team_matches."
+            )
     
     # Check if question is about team/club season aggregates but uses player views
     is_team_season_question = any(kw in q_lower for kw in TEAM_SEASON_KEYWORDS)
