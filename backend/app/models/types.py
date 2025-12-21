@@ -19,6 +19,7 @@ class QueryRequest(BaseModel):
     question: str
     summarize: bool = True
     include_rows: bool = True
+    multi_query: bool = False  # Opt-in: use 3-query diversity mode
 
 
 class QueryResponse(BaseModel):
@@ -31,4 +32,5 @@ class QueryResponse(BaseModel):
 
     # Debug/trace fields for the demo UI (lets the frontend show retries, warnings, etc.)
     attempt_count: Optional[int] = None
-    trace: Optional[List[QueryAttemptTrace]] = None
+    trace: Optional[List[Any]] = None  # Flexible: can be QueryAttemptTrace or multi-query dicts
+    queries_attempted: Optional[int] = None  # For multi-query mode

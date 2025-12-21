@@ -156,11 +156,27 @@ def _ensure_select_only(sql: str) -> None:
 
 def _ensure_allowed_tables(sql: str) -> None:
     parsed = sqlglot.parse_one(sql, read="postgres")
+    
+    # First, collect all CTE names (these are valid aliases, not real tables)
+    cte_names: Set[str] = set()
+    for cte in parsed.find_all(exp.CTE):
+        if cte.alias:
+            cte_names.add(cte.alias)
+    
+    # Also check for WITH clause CTEs by their alias attribute
+    with_clause = parsed.find(exp.With)
+    if with_clause:
+        for cte_expr in with_clause.expressions:
+            if hasattr(cte_expr, 'alias') and cte_expr.alias:
+                cte_names.add(cte_expr.alias)
+    
     tables = {t.name for t in parsed.find_all(exp.Table)}
     # Allow schema-qualified names too; we only care about the table identifier
     if not tables:
         return
-    unknown = {t for t in tables if t not in ALLOWED_TABLES}
+    
+    # Exclude CTE names from the check - they're internal aliases, not real tables
+    unknown = {t for t in tables if t not in ALLOWED_TABLES and t not in cte_names}
     if unknown:
         raise SQLValidationError(f"Query references non-allowed tables/views: {sorted(unknown)}")
 

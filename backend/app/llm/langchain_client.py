@@ -15,6 +15,7 @@ class LLMResponse:
 
 
 _SQL_CLEAN_RE = re.compile(r"```sql|```", re.IGNORECASE)
+_JSON_CLEAN_RE = re.compile(r"```json\s*|```", re.IGNORECASE)
 
 
 class OpenAILLM:
@@ -35,6 +36,7 @@ class OpenAILLM:
         # Keep these defaults aligned with the existing behavior.
         self._sql_llm = ChatOpenAI(model=self.model, temperature=0.2)
         self._text_llm = ChatOpenAI(model=self.model, temperature=0.1)
+        self._json_llm = ChatOpenAI(model=self.model, temperature=0.3)  # For multi-query JSON output
 
     def generate_sql(self, prompt: str) -> LLMResponse:
         msg = self._sql_llm.invoke(
@@ -67,4 +69,22 @@ class OpenAILLM:
         )
 
         text = (getattr(msg, "content", "") or "").strip()
+        return LLMResponse(text=text)
+
+    def generate_json(self, prompt: str) -> LLMResponse:
+        """Generate structured JSON output for multi-query generation."""
+        msg = self._json_llm.invoke(
+            [
+                SystemMessage(
+                    content=(
+                        "You generate valid JSON only. "
+                        "Never include explanations, markdown fences, or any text outside the JSON structure."
+                    )
+                ),
+                HumanMessage(content=prompt),
+            ]
+        )
+
+        text = (getattr(msg, "content", "") or "").strip()
+        text = _JSON_CLEAN_RE.sub("", text).strip()
         return LLMResponse(text=text)

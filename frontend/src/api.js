@@ -17,11 +17,16 @@ export async function fetchGoldenPrompts(limit = 5) {
   return data.items || [];
 }
 
-export async function runQuery(question, { summarize = true, includeRows = true } = {}) {
+export async function runQuery(question, { summarize = true, includeRows = true, multiQuery = false } = {}) {
   const res = await fetch(`${API_BASE}/api/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, summarize, include_rows: includeRows }),
+    body: JSON.stringify({ 
+      question, 
+      summarize, 
+      include_rows: includeRows,
+      multi_query: multiQuery,
+    }),
   });
 
   const payload = await res.json().catch(() => null);

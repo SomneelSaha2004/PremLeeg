@@ -6,6 +6,68 @@ from typing import Any, Dict, List, Optional
 from ..context.football_data_notes import FOOTBALL_DATA_NOTES_NON_BETTING
 
 
+# =============================================================================
+# SHARED CONSTANTS FOR MULTI-QUERY GENERATION
+# =============================================================================
+
+STREAK_VS_TOTAL_SECTION = """
+# CRITICAL: STREAK vs TOTAL DISTINCTION
+
+STREAK = CONSECUTIVE games meeting a condition (use streak views)
+TOTAL/COUNT = Sum or count across a period (use aggregation on match/season views)
+
+## STREAK VIEWS are ONLY for:
+- "longest winning streak" / "consecutive wins" / "wins in a row" → v_team_win_streaks
+- "longest unbeaten run" / "games without losing" → v_team_unbeaten_streaks
+- "consecutive clean sheets" / "clean sheet streak" → v_team_clean_sheet_streaks
+- "consecutive games scoring" / "scoring streak" → v_team_scoring_streaks
+
+## DO NOT use streak views for:
+- "how many clean sheets" / "total clean sheets" / "most clean sheets" → COUNT on v_team_matches WHERE goals_against = 0
+- "how many wins" / "total wins" → SUM on v_team_season_summary or pl_season_table
+- "games without a red card" → custom window query on pl_matches (no precomputed view)
+- "without winning" / "winless" → NOT the same as unbeaten! Use custom query
+- "at the start of season without X" → window function with ordering by match_date
+
+## Examples of WRONG vs RIGHT:
+
+Q: "How many clean sheets did Burnley keep in 2024-25?"
+WRONG: SELECT * FROM v_team_clean_sheet_streaks WHERE team = 'Burnley' (this gives STREAK length, not count!)
+RIGHT: SELECT team, COUNT(*) AS clean_sheets FROM public.v_team_matches WHERE team = 'Burnley' AND season_start = 2024 AND goals_against = 0 GROUP BY team
+
+Q: "Longest run without a red card"
+WRONG: SELECT * FROM v_team_clean_sheet_streaks (wrong view entirely!)
+RIGHT: Complex window function query on pl_matches tracking red cards - acknowledge if unsure
+
+Q: "Which club went longest at start of season without winning?"
+WRONG: SELECT * FROM v_team_unbeaten_streaks (unbeaten means not losing, NOT winless!)
+RIGHT: Window function on v_team_matches checking for result != 'W' from season start, ordered by match_date
+
+Q: "How many clubs have gone a whole season without losing an away match?"
+WRONG: SELECT * FROM v_team_unbeaten_streaks (this is overall streaks, not away-specific)
+RIGHT: Aggregate on v_team_matches WHERE is_home = false GROUP BY team, season_start HAVING SUM(CASE WHEN result = 'L' THEN 1 ELSE 0 END) = 0
+"""
+
+VALID_TEAM_NAMES = """
+## VALID TEAM NAMES (use EXACTLY as shown, case-sensitive)
+Arsenal, Aston Villa, Barnsley, Birmingham, Blackburn, Blackpool, Bolton, Bournemouth,
+Bradford, Brentford, Brighton, Burnley, Cardiff, Charlton, Chelsea, Coventry, Crystal Palace,
+Derby, Everton, Fulham, Huddersfield, Hull, Ipswich, Leeds, Leicester, Liverpool, Luton,
+Man City, Man United, Middlesbrough, Newcastle, Norwich, Nott'm Forest, Oldham, Portsmouth,
+QPR, Reading, Sheffield United, Sheffield Weds, Southampton, Stoke, Sunderland, Swansea,
+Swindon, Tottenham, Watford, West Brom, West Ham, Wigan, Wimbledon, Wolves
+
+Common name mappings (use the DB name on the right):
+- "Manchester City" → 'Man City'
+- "Manchester United" / "Man Utd" → 'Man United'  
+- "Nottingham Forest" → 'Nott''m Forest'
+- "Sheffield Wednesday" → 'Sheffield Weds'
+- "West Bromwich Albion" → 'West Brom'
+- "Tottenham Hotspur" / "Spurs" → 'Tottenham'
+- "Queens Park Rangers" → 'QPR'
+"""
+
+
 def sql_generation_prompt(question: str, schema_snapshot: str, intent_hint: Optional[str] = None, previous_error: Optional[str] = None) -> str:
         """
         View-first SQL generation with comprehensive examples and retry support.
@@ -443,4 +505,132 @@ Answer the user's question using ONLY the SQL results provided.
 
 # Output
 Write the final answer in plain English.
+""".strip()
+
+
+# =============================================================================
+# MULTI-QUERY GENERATION (3 diverse queries in one LLM call)
+# =============================================================================
+
+def multi_sql_generation_prompt(
+    question: str,
+    schema_snapshot: str,
+    intent_hint: Optional[str] = None,
+    previous_errors: Optional[List[str]] = None,
+) -> str:
+    """
+    Generate 3 diverse SQL queries in a single LLM call.
+    Each query uses a different primary table/view approach.
+    """
+    
+    error_section = ""
+    if previous_errors:
+        error_list = "\n".join(f"- Query {i+1}: {e}" for i, e in enumerate(previous_errors) if e)
+        error_section = f"""
+# PREVIOUS ERRORS (all queries failed - try completely different approaches)
+{error_list}
+
+IMPORTANT: The previous approaches all failed. Try different tables, different logic, different aggregation methods.
+"""
+    
+    return f"""
+# ROLE
+You are an expert Postgres SQL generator for Premier League analytics.
+
+# TASK
+Generate EXACTLY 3 different SQL queries to answer the user's question.
+Each query MUST use a different primary table/view to ensure diverse approaches.
+
+# OUTPUT FORMAT (strict JSON array)
+Return ONLY a JSON array with exactly 3 objects. No markdown fences, no explanation.
+[
+  {{"approach": "Brief description of approach 1", "primary_table": "table_name", "sql": "SELECT ..."}},
+  {{"approach": "Brief description of approach 2", "primary_table": "table_name", "sql": "SELECT ..."}},
+  {{"approach": "Brief description of approach 3", "primary_table": "table_name", "sql": "SELECT ..."}}
+]
+
+# DIVERSITY REQUIREMENTS (MUST follow)
+- Query 1: Use a PRECOMPUTED VIEW if applicable (v_team_season_summary, v_player_career_totals, pl_season_table, etc.)
+- Query 2: Use a BASE TABLE with aggregation/window functions (pl_matches, v_team_matches, pl_player_standard_stats)
+- Query 3: Use an ALTERNATIVE approach (different view, CTE, different aggregation logic)
+
+If the question clearly can only be answered one way, still provide 3 queries but vary the columns selected or ordering.
+
+# HARD CONSTRAINTS (apply to ALL 3 queries)
+1. Read-only SELECT queries only
+2. NO EXPLICIT JOINS - use subqueries, CTEs, window functions instead  
+3. Always include LIMIT (default 20)
+4. Use NULLS LAST in ORDER BY for nullable columns
+5. Schema-qualify all tables: public.<table_or_view>
+6. Use exact team names from the valid list below
+
+{STREAK_VS_TOTAL_SECTION}
+
+{VALID_TEAM_NAMES}
+
+# DATABASE SCHEMA
+{schema_snapshot}
+
+{error_section}
+
+# User question
+{question}
+
+# Output (JSON array only, no markdown, no explanation)
+""".strip()
+
+
+def multi_answer_synthesis_prompt(
+    question: str,
+    query_results: List[Dict[str, Any]],
+    max_rows_per_query: int = 10,
+) -> str:
+    """
+    Synthesize answer from multiple query results.
+    Cross-references results and picks the best approach.
+    """
+    
+    results_json = []
+    for i, qr in enumerate(query_results):
+        results_json.append({
+            "query_num": i + 1,
+            "approach": qr.get("approach", "unknown"),
+            "primary_table": qr.get("primary_table", "unknown"),
+            "sql": qr.get("sql", ""),
+            "success": qr.get("success", False),
+            "error": qr.get("error"),
+            "columns": qr.get("columns", []),
+            "rows": qr.get("rows", [])[:max_rows_per_query],
+            "row_count": qr.get("row_count", 0),
+        })
+    
+    return f"""
+# Role
+You are a careful data analyst for the Premier League.
+
+# Task
+Answer the user's question using results from 3 different SQL query approaches.
+Cross-reference the results to find the most reliable answer.
+
+# Rules (MUST follow)
+1. Compare results across queries - if they agree, high confidence; if they disagree, investigate why
+2. Prefer queries that:
+   - Returned data (success=true, row_count > 0)
+   - Used the correct table for the question type (see approach/primary_table)
+3. IGNORE results from queries that used the WRONG approach:
+   - Streak view (v_team_*_streaks) for a "total count" question = WRONG
+   - Unbeaten view for a "winless" question = WRONG (unbeaten ≠ winless)
+   - Player view for a team question = WRONG
+4. If NO query adequately answers the question, say "I couldn't find reliable data for this question" and explain why
+5. If data was found, give a direct answer first, then note which approach worked best
+6. Be concise but conversational
+
+# Query Results (3 approaches)
+{json.dumps(results_json, default=str, indent=2)}
+
+# User Question  
+{question}
+
+# Output
+Write the final answer in plain English. Start with the direct answer if data was found.
 """.strip()

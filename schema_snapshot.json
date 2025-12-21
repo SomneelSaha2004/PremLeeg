@@ -1,12 +1,12 @@
 {
-  "generated_at": "2025-12-19T20:41:29Z",
+  "generated_at": "2025-12-21T09:37:14Z",
   "include_schemas": [
     "public"
   ],
   "stats": {
-    "relations": 10,
+    "relations": 17,
     "tables": 2,
-    "views": 8
+    "views": 15
   },
   "relations": [
     {
@@ -712,6 +712,71 @@
     },
     {
       "schema": "public",
+      "name": "v_team_clean_sheet_streaks",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "team",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "streak_start",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "streak_end",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "games",
+          "type": "bigint",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " WITH base AS (\n         SELECT pl_team_match.team,\n            pl_team_match.season_start,\n            pl_team_match.match_date,\n            pl_team_match.kickoff_time,\n            pl_team_match.match_id,\n            pl_team_match.goals_for,\n            pl_team_match.goals_against,\n                CASE\n                    WHEN pl_team_match.goals_against = 0 THEN 0\n                    ELSE 1\n                END AS breaker\n           FROM pl_team_match\n          WHERE pl_team_match.goals_for IS NOT NULL AND pl_team_match.goals_against IS NOT NULL\n        ), grp AS (\n         SELECT base.team,\n            base.season_start,\n            base.match_date,\n            base.kickoff_time,\n            base.match_id,\n            base.goals_for,\n            base.goals_against,\n            base.breaker,\n            sum(base.breaker) OVER (PARTITION BY base.team ORDER BY base.match_date, base.kickoff_time, base.match_id) AS g\n           FROM base\n        )\n SELECT team,\n    min(match_date) AS streak_start,\n    max(match_date) AS streak_end,\n    count(*) AS games\n   FROM grp\n  WHERE goals_against = 0\n  GROUP BY team, g;"
+    },
+    {
+      "schema": "public",
+      "name": "v_team_clean_sheet_streaks_season",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "team",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "season_start",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "streak_start",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "streak_end",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "games",
+          "type": "bigint",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " WITH base AS (\n         SELECT pl_team_match.team,\n            pl_team_match.season_start,\n            pl_team_match.match_date,\n            pl_team_match.kickoff_time,\n            pl_team_match.match_id,\n            pl_team_match.goals_for,\n            pl_team_match.goals_against,\n                CASE\n                    WHEN pl_team_match.goals_against = 0 THEN 0\n                    ELSE 1\n                END AS breaker\n           FROM pl_team_match\n          WHERE pl_team_match.goals_for IS NOT NULL AND pl_team_match.goals_against IS NOT NULL\n        ), grp AS (\n         SELECT base.team,\n            base.season_start,\n            base.match_date,\n            base.kickoff_time,\n            base.match_id,\n            base.goals_for,\n            base.goals_against,\n            base.breaker,\n            sum(base.breaker) OVER (PARTITION BY base.team, base.season_start ORDER BY base.match_date, base.kickoff_time, base.match_id) AS g\n           FROM base\n        )\n SELECT team,\n    season_start,\n    min(match_date) AS streak_start,\n    max(match_date) AS streak_end,\n    count(*) AS games\n   FROM grp\n  WHERE goals_against = 0\n  GROUP BY team, season_start, g;"
+    },
+    {
+      "schema": "public",
       "name": "v_team_matches",
       "type": "view",
       "row_estimate": -1,
@@ -769,6 +834,71 @@
       ],
       "indexes": [],
       "definition": " SELECT pl_matches.season_start,\n    pl_matches.match_date,\n    pl_matches.home_team AS team,\n    pl_matches.away_team AS opponent,\n    true AS is_home,\n    pl_matches.ft_home_goals AS goals_for,\n    pl_matches.ft_away_goals AS goals_against,\n    COALESCE(pl_matches.home_yellow::integer, 0) AS yellows,\n    COALESCE(pl_matches.home_red::integer, 0) AS reds,\n        CASE\n            WHEN pl_matches.ft_home_goals > pl_matches.ft_away_goals THEN 'W'::text\n            WHEN pl_matches.ft_home_goals < pl_matches.ft_away_goals THEN 'L'::text\n            ELSE 'D'::text\n        END AS result\n   FROM pl_matches\nUNION ALL\n SELECT pl_matches.season_start,\n    pl_matches.match_date,\n    pl_matches.away_team AS team,\n    pl_matches.home_team AS opponent,\n    false AS is_home,\n    pl_matches.ft_away_goals AS goals_for,\n    pl_matches.ft_home_goals AS goals_against,\n    COALESCE(pl_matches.away_yellow::integer, 0) AS yellows,\n    COALESCE(pl_matches.away_red::integer, 0) AS reds,\n        CASE\n            WHEN pl_matches.ft_away_goals > pl_matches.ft_home_goals THEN 'W'::text\n            WHEN pl_matches.ft_away_goals < pl_matches.ft_home_goals THEN 'L'::text\n            ELSE 'D'::text\n        END AS result\n   FROM pl_matches;"
+    },
+    {
+      "schema": "public",
+      "name": "v_team_scoring_streaks",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "team",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "streak_start",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "streak_end",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "games",
+          "type": "bigint",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " WITH base AS (\n         SELECT pl_team_match.team,\n            pl_team_match.season_start,\n            pl_team_match.match_date,\n            pl_team_match.kickoff_time,\n            pl_team_match.match_id,\n            pl_team_match.goals_for,\n            pl_team_match.goals_against,\n                CASE\n                    WHEN pl_team_match.goals_for > 0 THEN 0\n                    ELSE 1\n                END AS breaker\n           FROM pl_team_match\n          WHERE pl_team_match.goals_for IS NOT NULL AND pl_team_match.goals_against IS NOT NULL\n        ), grp AS (\n         SELECT base.team,\n            base.season_start,\n            base.match_date,\n            base.kickoff_time,\n            base.match_id,\n            base.goals_for,\n            base.goals_against,\n            base.breaker,\n            sum(base.breaker) OVER (PARTITION BY base.team ORDER BY base.match_date, base.kickoff_time, base.match_id) AS g\n           FROM base\n        )\n SELECT team,\n    min(match_date) AS streak_start,\n    max(match_date) AS streak_end,\n    count(*) AS games\n   FROM grp\n  WHERE goals_for > 0\n  GROUP BY team, g;"
+    },
+    {
+      "schema": "public",
+      "name": "v_team_scoring_streaks_season",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "team",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "season_start",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "streak_start",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "streak_end",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "games",
+          "type": "bigint",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " WITH base AS (\n         SELECT pl_team_match.team,\n            pl_team_match.season_start,\n            pl_team_match.match_date,\n            pl_team_match.kickoff_time,\n            pl_team_match.match_id,\n            pl_team_match.goals_for,\n            pl_team_match.goals_against,\n                CASE\n                    WHEN pl_team_match.goals_for > 0 THEN 0\n                    ELSE 1\n                END AS breaker\n           FROM pl_team_match\n          WHERE pl_team_match.goals_for IS NOT NULL AND pl_team_match.goals_against IS NOT NULL\n        ), grp AS (\n         SELECT base.team,\n            base.season_start,\n            base.match_date,\n            base.kickoff_time,\n            base.match_id,\n            base.goals_for,\n            base.goals_against,\n            base.breaker,\n            sum(base.breaker) OVER (PARTITION BY base.team, base.season_start ORDER BY base.match_date, base.kickoff_time, base.match_id) AS g\n           FROM base\n        )\n SELECT team,\n    season_start,\n    min(match_date) AS streak_start,\n    max(match_date) AS streak_end,\n    count(*) AS games\n   FROM grp\n  WHERE goals_for > 0\n  GROUP BY team, season_start, g;"
     },
     {
       "schema": "public",
@@ -839,6 +969,156 @@
       ],
       "indexes": [],
       "definition": " SELECT season_start,\n    team,\n    count(*) AS played,\n    sum((result = 'W'::text)::integer) AS wins,\n    sum((result = 'D'::text)::integer) AS draws,\n    sum((result = 'L'::text)::integer) AS losses,\n    sum(goals_for) AS goals_for,\n    sum(goals_against) AS goals_against,\n    sum(goals_for - goals_against) AS goal_diff,\n    sum(\n        CASE result\n            WHEN 'W'::text THEN 3\n            WHEN 'D'::text THEN 1\n            ELSE 0\n        END) AS points,\n    sum(yellows) AS yellows,\n    sum(reds) AS reds\n   FROM v_team_matches\n  GROUP BY season_start, team;"
+    },
+    {
+      "schema": "public",
+      "name": "v_team_unbeaten_streaks",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "team",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "streak_start",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "streak_end",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "games",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "wins",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "draws",
+          "type": "bigint",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " WITH base AS (\n         SELECT pl_team_match.team,\n            pl_team_match.season_start,\n            pl_team_match.match_date,\n            pl_team_match.kickoff_time,\n            pl_team_match.match_id,\n            pl_team_match.goals_for,\n            pl_team_match.goals_against,\n                CASE\n                    WHEN pl_team_match.goals_for > pl_team_match.goals_against THEN 'W'::text\n                    WHEN pl_team_match.goals_for = pl_team_match.goals_against THEN 'D'::text\n                    ELSE 'L'::text\n                END AS result,\n                CASE\n                    WHEN pl_team_match.goals_for < pl_team_match.goals_against THEN 1\n                    ELSE 0\n                END AS breaker\n           FROM pl_team_match\n          WHERE pl_team_match.goals_for IS NOT NULL AND pl_team_match.goals_against IS NOT NULL\n        ), grp AS (\n         SELECT base.team,\n            base.season_start,\n            base.match_date,\n            base.kickoff_time,\n            base.match_id,\n            base.goals_for,\n            base.goals_against,\n            base.result,\n            base.breaker,\n            sum(base.breaker) OVER (PARTITION BY base.team ORDER BY base.match_date, base.kickoff_time, base.match_id) AS g\n           FROM base\n        )\n SELECT team,\n    min(match_date) AS streak_start,\n    max(match_date) AS streak_end,\n    count(*) AS games,\n    sum((result = 'W'::text)::integer) AS wins,\n    sum((result = 'D'::text)::integer) AS draws\n   FROM grp\n  WHERE result = ANY (ARRAY['W'::text, 'D'::text])\n  GROUP BY team, g;"
+    },
+    {
+      "schema": "public",
+      "name": "v_team_unbeaten_streaks_season",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "team",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "season_start",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "streak_start",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "streak_end",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "games",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "wins",
+          "type": "bigint",
+          "not_null": false
+        },
+        {
+          "name": "draws",
+          "type": "bigint",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " WITH base AS (\n         SELECT pl_team_match.team,\n            pl_team_match.season_start,\n            pl_team_match.match_date,\n            pl_team_match.kickoff_time,\n            pl_team_match.match_id,\n            pl_team_match.goals_for,\n            pl_team_match.goals_against,\n                CASE\n                    WHEN pl_team_match.goals_for > pl_team_match.goals_against THEN 'W'::text\n                    WHEN pl_team_match.goals_for = pl_team_match.goals_against THEN 'D'::text\n                    ELSE 'L'::text\n                END AS result,\n                CASE\n                    WHEN pl_team_match.goals_for < pl_team_match.goals_against THEN 1\n                    ELSE 0\n                END AS breaker\n           FROM pl_team_match\n          WHERE pl_team_match.goals_for IS NOT NULL AND pl_team_match.goals_against IS NOT NULL\n        ), grp AS (\n         SELECT base.team,\n            base.season_start,\n            base.match_date,\n            base.kickoff_time,\n            base.match_id,\n            base.goals_for,\n            base.goals_against,\n            base.result,\n            base.breaker,\n            sum(base.breaker) OVER (PARTITION BY base.team, base.season_start ORDER BY base.match_date, base.kickoff_time, base.match_id) AS g\n           FROM base\n        )\n SELECT team,\n    season_start,\n    min(match_date) AS streak_start,\n    max(match_date) AS streak_end,\n    count(*) AS games,\n    sum((result = 'W'::text)::integer) AS wins,\n    sum((result = 'D'::text)::integer) AS draws\n   FROM grp\n  WHERE result = ANY (ARRAY['W'::text, 'D'::text])\n  GROUP BY team, season_start, g;"
+    },
+    {
+      "schema": "public",
+      "name": "v_team_win_streaks",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "team",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "streak_start",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "streak_end",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "win_streak",
+          "type": "bigint",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " WITH base AS (\n         SELECT pl_team_match.team,\n            pl_team_match.match_date,\n            pl_team_match.kickoff_time,\n            pl_team_match.match_id,\n            pl_team_match.goals_for,\n            pl_team_match.goals_against,\n            pl_team_match.goals_for > pl_team_match.goals_against AS is_win\n           FROM pl_team_match\n          WHERE pl_team_match.goals_for IS NOT NULL AND pl_team_match.goals_against IS NOT NULL\n        ), grp AS (\n         SELECT base.team,\n            base.match_date,\n            base.kickoff_time,\n            base.match_id,\n            base.goals_for,\n            base.goals_against,\n            base.is_win,\n            sum(\n                CASE\n                    WHEN base.is_win THEN 0\n                    ELSE 1\n                END) OVER (PARTITION BY base.team ORDER BY base.match_date, base.kickoff_time, base.match_id) AS g\n           FROM base\n        )\n SELECT team,\n    min(match_date) AS streak_start,\n    max(match_date) AS streak_end,\n    count(*) AS win_streak\n   FROM grp\n  WHERE is_win\n  GROUP BY team, g;"
+    },
+    {
+      "schema": "public",
+      "name": "v_team_win_streaks_season",
+      "type": "view",
+      "row_estimate": -1,
+      "columns": [
+        {
+          "name": "season_start",
+          "type": "smallint",
+          "not_null": false
+        },
+        {
+          "name": "team",
+          "type": "text",
+          "not_null": false
+        },
+        {
+          "name": "streak_start",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "streak_end",
+          "type": "date",
+          "not_null": false
+        },
+        {
+          "name": "win_streak",
+          "type": "bigint",
+          "not_null": false
+        }
+      ],
+      "indexes": [],
+      "definition": " WITH base AS (\n         SELECT pl_team_match.season_start,\n            pl_team_match.team,\n            pl_team_match.match_date,\n            pl_team_match.kickoff_time,\n            pl_team_match.match_id,\n            pl_team_match.goals_for,\n            pl_team_match.goals_against,\n            pl_team_match.goals_for > pl_team_match.goals_against AS is_win\n           FROM pl_team_match\n          WHERE pl_team_match.goals_for IS NOT NULL AND pl_team_match.goals_against IS NOT NULL\n        ), grp AS (\n         SELECT base.season_start,\n            base.team,\n            base.match_date,\n            base.kickoff_time,\n            base.match_id,\n            base.goals_for,\n            base.goals_against,\n            base.is_win,\n            sum(\n                CASE\n                    WHEN base.is_win THEN 0\n                    ELSE 1\n                END) OVER (PARTITION BY base.team, base.season_start ORDER BY base.match_date, base.kickoff_time, base.match_id) AS g\n           FROM base\n        )\n SELECT season_start,\n    team,\n    min(match_date) AS streak_start,\n    max(match_date) AS streak_end,\n    count(*) AS win_streak\n   FROM grp\n  WHERE is_win\n  GROUP BY season_start, team, g;"
     }
   ]
 }

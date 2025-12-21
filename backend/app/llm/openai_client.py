@@ -14,6 +14,7 @@ class LLMResponse:
 
 
 _SQL_CLEAN_RE = re.compile(r"```sql|```", re.IGNORECASE)
+_JSON_CLEAN_RE = re.compile(r"```json\s*|```", re.IGNORECASE)
 
 
 class OpenAILLM:
@@ -99,5 +100,44 @@ class OpenAILLM:
                 text = ""
             text = text.strip()
 
+        return LLMResponse(text=text)
+
+    def generate_json(self, prompt: str) -> LLMResponse:
+        """Generate structured JSON output for multi-query generation."""
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You generate valid JSON only. "
+                    "Never include explanations, markdown fences, or any text outside the JSON structure."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ]
+
+        try:
+            resp = self.client.responses.create(
+                model=self.model,
+                temperature=0.3,  # Slightly higher for query diversity
+                input=messages,
+            )
+            text = (resp.output_text or "").strip()
+        except AttributeError:
+            chat = self.client.chat.completions.create(
+                model=self.model,
+                temperature=0.3,
+                messages=messages,
+            )
+            choice = chat.choices[0]
+            if hasattr(choice, "message") and getattr(choice.message, "content", None):
+                text = choice.message.content
+            elif hasattr(choice, "text") and choice.text:
+                text = choice.text
+            else:
+                text = ""
+            text = text.strip()
+
+        # Clean up any markdown fences
+        text = _JSON_CLEAN_RE.sub("", text).strip()
         return LLMResponse(text=text)
 
