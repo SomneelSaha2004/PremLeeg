@@ -1,0 +1,69 @@
+[project]
+name = "plquery-backend"
+version = "1.0.0"
+description = "PLQuery - Natural language SQL agent for Premier League analytics"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Somneel Saha", email = "somneelsaha2004@gmail.com"}
+]
+keywords = ["sql", "nlp", "premier-league", "fastapi", "openai", "langchain"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
+]
+
+dependencies = [
+    "fastapi>=0.115.0,<1.0.0",
+    "uvicorn[standard]>=0.32.0,<1.0.0",
+    "pydantic>=2.10.0,<3.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+    "psycopg[binary]>=3.2.0,<4.0.0",
+    "sqlglot>=25.0.0,<26.0.0",
+    "openai>=1.58.0,<2.0.0",
+    "langchain>=0.3.14,<1.0.0",
+    "langchain-openai>=0.2.14,<1.0.0",
+    "langchain-core>=0.3.29,<1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "httpx>=0.25.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/SomneelSaha2004/PLQuery"
+Repository = "https://github.com/SomneelSaha2004/PLQuery.git"
+Issues = "https://github.com/SomneelSaha2004/PLQuery/issues"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -116,7 +116,7 @@ export default function App() {
           <VStack spacing={3} align="start">
             <HStack spacing={3}>
               <Heading size="xl" fontWeight="bold">
-                ⚽ PremLeeg
+                ⚽ PLQuery
               </Heading>
               <Badge
                 bg="whiteAlpha.200"
@@ -231,7 +231,7 @@ export default function App() {
         <Container maxW="7xl">
           <Flex justify="space-between" align="center" wrap="wrap" gap={4}>
             <VStack align="start" spacing={1}>
-              <Text fontWeight="semibold" color="white">PremLeeg</Text>
+              <Text fontWeight="semibold" color="white">PLQuery</Text>
               <Text fontSize="sm">
                 A natural language SQL agent for Premier League analytics
               </Text>
@@ -242,7 +242,7 @@ export default function App() {
                 <Text fontSize="sm">React • FastAPI • PostgreSQL • OpenAI</Text>
               </VStack>
               <Link
-                href="https://github.com/SomneelSaha2004/PremLeeg"
+                href="https://github.com/SomneelSaha2004/PLQuery"
                 isExternal
                 _hover={{ color: 'white' }}
               >

@@ -1,15 +1,34 @@
-fastapi==0.115.6
-uvicorn[standard]==0.32.1
-pydantic==2.10.3
-python-dotenv==1.0.1
+# ===========================================
+# PLQuery Backend Dependencies
+# ===========================================
+# Python 3.11+ required
 
-psycopg[binary]==3.2.3
+# -----------------
+# Web Framework
+# -----------------
+fastapi>=0.115.0,<1.0.0
+uvicorn[standard]>=0.32.0,<1.0.0
+pydantic>=2.10.0,<3.0.0
 
-sqlglot==25.0.3
+# -----------------
+# Environment & Configuration
+# -----------------
+python-dotenv>=1.0.0,<2.0.0
 
-# Keep compatible with langchain-openai (requires openai>=1.58.1)
-openai==1.58.1
+# -----------------
+# Database
+# -----------------
+psycopg[binary]>=3.2.0,<4.0.0
 
-langchain==0.3.14
-langchain-openai==0.2.14
-langchain-core==0.3.29
+# -----------------
+# SQL Parsing & Validation
+# -----------------
+sqlglot>=25.0.0,<26.0.0
+
+# -----------------
+# LLM / AI
+# -----------------
+openai>=1.58.0,<2.0.0
+langchain>=0.3.14,<1.0.0
+langchain-openai>=0.2.14,<1.0.0
+langchain-core>=0.3.29,<1.0.0

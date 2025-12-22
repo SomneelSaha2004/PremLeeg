@@ -1,6 +1,6 @@
-# PremLeeg Frontend (Demo)
+# PLQuery Frontend (Demo)
 
-React + Chakra UI demo dashboard for the PremLeeg backend.
+React + Chakra UI demo dashboard for the PLQuery backend.
 
 ## Run
 

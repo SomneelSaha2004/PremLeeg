@@ -70,7 +70,7 @@ export default function ArchitectureTab() {
       </HStack>
 
       <Text color="gray.600" mb={8} fontSize="md" maxW="3xl">
-        PremLeeg uses an AI-powered SQL agent pipeline that converts natural language questions into validated SQL queries.
+        PLQuery uses an AI-powered SQL agent pipeline that converts natural language questions into validated SQL queries.
         It supports two execution modes for different accuracy/speed tradeoffs.
       </Text>
 
